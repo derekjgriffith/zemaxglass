@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: UTF-8 -*-
 
-from numpy import *
+import numpy as np
 import os, glob, sys
 import matplotlib.pyplot as plt
 import matplotlib.transforms
@@ -95,14 +95,14 @@ class ZemaxGlassLibrary(object):
                     lo_disp_lim = self.library[catalogue][glass]['ld'][0] * 1000.0  # nm
                     hi_disp_lim = self.library[catalogue][glass]['ld'][1] * 1000.0  # nm
                     if lo_disp_lim > wavemin or hi_disp_lim < wavemax: 
-                        print(f'Discarding {catalogue.capitalize()} {glass} (Valid Wavelengths {lo_disp_lim} to {hi_disp_lim} nm)')
+                        # print(f'Discarding {catalogue.capitalize()} {glass} (Valid Wavelengths {lo_disp_lim} to {hi_disp_lim} nm)')
                         discard_list.append(glass)
                 # Ditch the discarded glasses
                 for discarded_glass in discard_list:
                     del self.library[catalogue][discarded_glass]
                 # If the whole catalogue is now empty, discard entirely
                 if not self.library[catalogue]:
-                    print(f'------Discarding entire catalog {catalogue.capitalize()}')
+                    # print(f'------Discarding entire catalog {catalogue.capitalize()}')
                     cat_discard_list.append(catalogue)
             for discarded_cat in cat_discard_list:
                 del self.library[discarded_cat]
@@ -110,12 +110,12 @@ class ZemaxGlassLibrary(object):
         self.temp_ref = 20.0           ## the dispersion measurement reference temperature, in degC
 
         if (sampling_domain == 'wavelength'):
-            self.waves = linspace(wavemin, wavemax, nwaves)      ## wavelength in nm
+            self.waves = np.linspace(wavemin, wavemax, nwaves)      ## wavelength in nm
             self.wavenumbers = 1000.0 / self.waves               ## wavenumber in um^-1
         elif (sampling_domain == 'wavenumber'):
             sigma_min = 1000.0 / wavemax
             sigma_max = 1000.0 / wavemin
-            self.wavenumbers = linspace(sigma_min, sigma_max, nwaves) ## wavenumber in um^-1
+            self.wavenumbers = np.linspace(sigma_min, sigma_max, nwaves) ## wavenumber in um^-1
             self.waves = 1000.0 / self.wavenumbers                    ## wavelength in nm
 
         return
@@ -221,23 +221,23 @@ class ZemaxGlassLibrary(object):
 
         ## Remove the "inquiry glasses".
         I_glasses = ['FK3', 'N-SK10', 'N-SK15', 'BAFN6', 'N-BAF3', 'N-LAF3', 'SFL57', 'SFL6', 'SF11', 'N-SF19', 'N-PSK53', 'N-SF64', 'N-SF56', 'LASF35']
-        num_i = alen(I_glasses)
+        num_i = len(I_glasses)
 
         ## Remove the "high-transmission" duplications of regular glasses.
         H_glasses = ['LF5HT', 'BK7HT', 'LLF1HT', 'N-SF57HT', 'SF57HT', 'LF6HT', 'N-SF6HT', 'F14HT', 'LLF6HT', 'SF57HHT', 'F2HT', 'K5HT', 'SF6HT', 'F8HT', 'K7HT']
-        num_h = alen(H_glasses)
+        num_h = len(H_glasses)
 
         ## Remove the "soon-to-be-inquiry" glasses from the Schott catalog.
         N_glasses = ['KZFSN5', 'P-PK53', 'N-LAF36', 'UBK7', 'N-BK7']
-        num_n = alen(N_glasses)
+        num_n = len(N_glasses)
 
         ## Remove the Zinc-sulfide and zinc selenide glasses.
         ZN_glasses = ['CLEARTRAN_OLD', 'ZNS_VIS']
-        num_zn = alen(ZN_glasses)
+        num_zn = len(ZN_glasses)
 
         ## "zealous": remove the "P" glasses specifically designed for hot press molding, and several glasses that are nearly identical to others in the catalog.
         Z_glasses = ['N-F2', 'N-LAF7', 'N-SF1', 'N-SF10', 'N-SF2', 'N-SF4', 'N-SF5', 'N-SF57', 'N-SF6', 'N-ZK7', 'P-LASF50', 'P-LASF51', 'P-SF8', 'P-SK58A', 'P-SK60']
-        num_z = alen(Z_glasses)
+        num_z = len(Z_glasses)
 
         for glass in schott_glasses:
             remove = (glass in I_glasses) or (glass in H_glasses) or (glass in N_glasses) or (glass in ZN_glasses)
@@ -305,7 +305,7 @@ class ZemaxGlassLibrary(object):
 
         if (glass.upper() in ('AIR','VACUUM')):
             cd = None
-            ld = array((amin(self.waves), amax(self.waves))) / 1000.0
+            ld = np.array((np.amin(self.waves), np.amax(self.waves))) / 1000.0
             dispform = 0
         else:
             cd = self.library[catalog][glass]['cd']
@@ -315,8 +315,8 @@ class ZemaxGlassLibrary(object):
         ## Zemax's dispersion formulas all use wavelengths in um. So, to compare "ld"
         ## and wavemin,wavemax we first convert the former to nm and then, when done
         ## we convert to um.
-        if (amax(self.waves) < ld[0] * 1000.0) or (amin(self.waves) > ld[1] * 1000.0):
-            print('wavemin,wavemax=(%f,%f), but ld=(%f,%f)' % (amin(self.waves), amax(self.waves), ld[0], ld[1]))
+        if (np.amax(self.waves) < ld[0] * 1000.0) or (np.amin(self.waves) > ld[1] * 1000.0):
+            print('wavemin,wavemax=(%f,%f), but ld=(%f,%f)' % (np.amin(self.waves), np.amax(self.waves), ld[0], ld[1]))
             print('Cannot calculate an index in the required spectral range. Aborting ...')
             return(None, None)
 
@@ -331,7 +331,7 @@ class ZemaxGlassLibrary(object):
             td = self.library[catalog][glass]['td']
             T_ref = td[6]       ## the dispersion measurement reference temperature in degC
         else:
-            td = zeros(6)
+            td = np.zeros(6)
             T_ref = 0.0        ## the dispersion measurement reference temperature in degC
 
         ## Calculating the index of air is a special case, for which we can give a fixed formula.
@@ -341,55 +341,55 @@ class ZemaxGlassLibrary(object):
             n_ref = 1.0 + ((6432.8 + ((2949810.0 * w**2) / (146.0 * w**2 - 1.0)) + ((25540.0 * w**2) / (41.0 * w**2 - 1.0))) * 1.0e-8)
             indices = 1.0 + ((n_ref - 1.0) / (1.0 + (T_ref - 15.0) * 3.4785e-3)) * (P / P_ref)
         if (glass.upper() == 'VACUUM'):
-            indices = ones_like(w)
+            indices = np.ones_like(w)
 
         if (dispform == 0):
             ## use this for AIR and VACUUM
             pass
         elif (dispform == 1):
             formula_rhs = cd[0] + (cd[1] * w**2) + (cd[2] * w**-2) + (cd[3] * w**-4) + (cd[4] * w**-6) + (cd[5] * w**-8)
-            indices = sqrt(formula_rhs)
+            indices = np.sqrt(formula_rhs)
         elif (dispform == 2):  ## Sellmeier1
             formula_rhs = (cd[0] * w**2 / (w**2 - cd[1])) + (cd[2] * w**2 / (w**2 - cd[3])) + (cd[4] * w**2 / (w**2 - cd[5]))
-            indices = sqrt(formula_rhs + 1.0)
+            indices = np.sqrt(formula_rhs + 1.0)
         elif (dispform == 3):  ## Herzberger
             L = 1.0 / (w**2 - 0.028)
             indices = cd[0] + (cd[1] * L) + (cd[2] * L**2) + (cd[3] * w**2) + (cd[4] * w**4) + (cd[5] * w**6)
         elif (dispform == 4):  ## Sellmeier2
             formula_rhs = cd[0] + (cd[1] * w**2 / (w**2 - (cd[2])**2)) + (cd[3] * w**2 / (w**2 - (cd[4])**2))
-            indices = sqrt(formula_rhs + 1.0)
+            indices = np.sqrt(formula_rhs + 1.0)
         elif (dispform == 5):  ## Conrady
             indices = cd[0] + (cd[1] / w) + (cd[2] / w**3.5)
         elif (dispform == 6):  ## Sellmeier3
             formula_rhs = (cd[0] * w**2 / (w**2 - cd[1])) + (cd[2] * w**2 / (w**2 - cd[3])) + \
                           (cd[4] * w**2 / (w**2 - cd[5])) + (cd[6] * w**2 / (w**2 - cd[7]))
-            indices = sqrt(formula_rhs + 1.0)
+            indices = np.sqrt(formula_rhs + 1.0)
         elif (dispform == 7):  ## HandbookOfOptics1
             formula_rhs = cd[0] + (cd[1] / (w**2 - cd[2])) - (cd[3] * w**2)
-            indices = sqrt(formula_rhs)
+            indices = np.sqrt(formula_rhs)
         elif (dispform == 8):  ## HandbookOfOptics2
             formula_rhs = cd[0] + (cd[1] * w**2 / (w**2 - cd[2])) - (cd[3] * w**2)
-            indices = sqrt(formula_rhs)
+            indices = np.sqrt(formula_rhs)
         elif (dispform == 9):  ## Sellmeier4
             formula_rhs = cd[0] + (cd[1] * w**2 / (w**2 - cd[2])) + (cd[3] * w**2 / (w**2 - cd[4]))
-            indices = sqrt(formula_rhs)
+            indices = np.sqrt(formula_rhs)
         elif (dispform == 10):  ## Extended1
             formula_rhs = cd[0] + (cd[1] * w**2) + (cd[2] * w**-2) + (cd[3] * w**-4) + (cd[4] * w**-6) + \
                           (cd[5] * w**-8) + (cd[6] * w**-10) + (cd[7] * w**-12)
-            indices = sqrt(formula_rhs)
+            indices = np.sqrt(formula_rhs)
         elif (dispform == 11):  ## Sellmeier5
             formula_rhs = (cd[0] * w**2 / (w**2 - cd[1])) + (cd[2] * w**2 / (w**2 - cd[3])) + \
                           (cd[4] * w**2 / (w**2 - cd[5])) + (cd[6] * w**2 / (w**2 - cd[7])) + \
                           (cd[8] * w**2 / (w**2 - cd[9]))
-            indices = sqrt(formula_rhs + 1.0)
+            indices = np.sqrt(formula_rhs + 1.0)
         elif (dispform == 12):  ## Extended2
             formula_rhs = cd[0] + (cd[1] * w**2) + (cd[2] * w**-2) + (cd[3] * w**-4) + (cd[4] * w**-6) + \
                           (cd[5] * w**-8) + (cd[6] * w**4) + (cd[7] * w**6)
-            indices = sqrt(formula_rhs)
+            indices = np.sqrt(formula_rhs)
         elif (dispform == 13):  ## Extended3
             formula_rhs = cd[0] + (cd[1] * w**2) + (cd[2] * w**4) + (cd[3] * w**-2) + (cd[4] * w**-4) + \
                           (cd[5] * w**-6) + (cd[6] * w**-8) + (cd[7] * w**-10) + (cd[8] * w**-12)
-            indices = sqrt(formula_rhs)
+            indices = np.sqrt(formula_rhs)
         else:
             raise ValueError('Dispersion formula #' + str(dispform) + ' (for glass=' + glass + ' in catalog=' + catalog + ') is not a valid choice.')
 
@@ -405,12 +405,12 @@ class ZemaxGlassLibrary(object):
 
         ## Zemax's dispersion formulas all use wavelengths in um. So, to compare "ld" with wavemin and wavemax, we need
         ## to multiply by 1000.
-        if (amin(self.waves) < ld[0] * 1000.0):
-            print('Truncating fitting range since wavemin=%fum, but ld[0]=%fum ...' % (amin(self.waves)/1000.0, ld[0]))
-            indices[self.waves < ld[0] * 1000.0] = NaN
-        if (amax(self.waves) > ld[1] * 1000.0):
-            print('Truncating fitting range since wavemax=%fum, but ld[1]=%fum ...' % (amax(self.waves)/1000.0, ld[1]))
-            indices[self.waves > ld[1] * 1000.0] = NaN
+        if (np.amin(self.waves) < ld[0] * 1000.0):
+            print('Truncating fitting range since wavemin=%fum, but ld[0]=%fum ...' % (np.amin(self.waves)/1000.0, ld[0]))
+            indices[self.waves < ld[0] * 1000.0] = np.NaN
+        if (np.amax(self.waves) > ld[1] * 1000.0):
+            print('Truncating fitting range since wavemax=%fum, but ld[1]=%fum ...' % (np.amax(self.waves)/1000.0, ld[1]))
+            indices[self.waves > ld[1] * 1000.0] = np.NaN
 
         ## Insert result back into the glass data. Do *not* do this if you want to be able to plot the temperature
         ## dependence of the refractive index.
@@ -442,10 +442,10 @@ class ZemaxGlassLibrary(object):
 
         okay = (indices > 0.0)
         if not any(okay):
-            return(waves, ones_like(waves) * NaN)
+            return(waves, np.ones_like(waves) * np.NaN)
 
-        x = linspace(-1.0, 1.0, alen(waves[okay]))
-        coeffs = polyfit(x, indices[okay], self.degree)
+        x = np.linspace(-1.0, 1.0, np.alen(waves[okay]))
+        coeffs = np.polyfit(x, indices[okay], self.degree)
         coeffs = coeffs[::-1]       ## reverse the vector so that the zeroth degree coeff goes first
         self.library[catalog][glass]['interp_coeffs'] = coeffs
 
@@ -499,21 +499,21 @@ class ZemaxGlassLibrary(object):
                         keyval2.append(self.library[catalog][glass][None])
 
         names_to_remove = []
-        keyval1 = array(keyval1)
-        keyval2 = array(keyval2)
+        keyval1 = np.array(keyval1)
+        keyval2 = np.array(keyval2)
 
-        for i in arange(alen(names)):
+        for i in np.arange(np.alen(names)):
             if (key2 == None):
-                idx = where(abs(keyval1[i] - keyval1) < tol1)
+                idx = np.where(abs(keyval1[i] - keyval1) < tol1)
                 names_to_remove.append([name for name in names[idx] if name != names[i]])
             else:
-                idx = where((abs(keyval1[i] - keyval1) < tol1) and (abs(keyval2 - keyval2[i]) < tol2))
+                idx = np.where((abs(keyval1[i] - keyval1) < tol1) and (abs(keyval2 - keyval2[i]) < tol2))
                 #print('%3i %3i %5.3f %5.3f %6.3f %6.3f %12s %12s --> REMOVE %3i %12s' % (i, j, keyval1[i], keyval1[j], keyval2[i], keyval2[j], names_all[i], names_all[j], j, names_all[j]))
                 names_to_remove.append([name for name in names[idx] if name != names[i]])
 
         ## Remove the duplicates from the "remove" list, and then delete those glasses
         ## from the glass catalog.
-        names_to_remove = unique(names_to_remove)
+        names_to_remove = np.unique(names_to_remove)
         for glass in names_to_remove:
             (catalog, glass) = glass.split('_')
             #print('i='+str(i)+': catalog='+catalog+'; glass='+name)
@@ -990,16 +990,16 @@ def parse_glass_file(filename):
             if len(it_row) > 1:
                 glass_catalog[glassname]['it']['transmission'].append(it_row[1])
             else:
-                glass_catalog[glassname]['it']['transmission'].append(NaN)
+                glass_catalog[glassname]['it']['transmission'].append(np.NaN)
 
             if len(it_row) > 2:
                 glass_catalog[glassname]['it']['thickness'].append(it_row[2])
             else:
-                glass_catalog[glassname]['it']['thickness'].append(NaN)
+                glass_catalog[glassname]['it']['thickness'].append(np.NaN)
             # Create them as numpy arrays as well
-            glass_catalog[glassname]['it']['wavelength_np'] = array(glass_catalog[glassname]['it']['wavelength'])
-            glass_catalog[glassname]['it']['transmission_np'] = array(glass_catalog[glassname]['it']['transmission'])
-            glass_catalog[glassname]['it']['thickness_np'] = array(glass_catalog[glassname]['it']['thickness'])
+            glass_catalog[glassname]['it']['wavelength_np'] = np.array(glass_catalog[glassname]['it']['wavelength'])
+            glass_catalog[glassname]['it']['transmission_np'] = np.array(glass_catalog[glassname]['it']['transmission'])
+            glass_catalog[glassname]['it']['thickness_np'] = np.array(glass_catalog[glassname]['it']['thickness'])
 
     f.close()
 
@@ -1033,7 +1033,7 @@ def string_list_to_float_list(x):
             try:
                 res.append(float(a))
             except:
-                res.append(NaN)
+                res.append(np.NaN)
 
     return(res)
 
@@ -1083,9 +1083,9 @@ def polyeval_Horner(x, poly_coeffs):
         The polynomial evaluated at the points given in x.
     '''
 
-    ncoeffs = alen(poly_coeffs)
-    p = zeros(alen(x))
-    for n in arange(ncoeffs-1,-1,-1):
+    ncoeffs = np.alen(poly_coeffs)
+    p = np.zeros(np.alen(x))
+    for n in np.arange(ncoeffs-1,-1,-1):
         p = poly_coeffs[n] + (x * p)
         #print('n=%i, c=%f' % (n, coeffs[n]))
     return(p)
@@ -1145,19 +1145,19 @@ def interp1d(x_old, y_old, x_new, **kwargs):
     import scipy.interpolate
     reversed = (x_old[0] > x_old[-1])
     if reversed:
-        x = array(x_old[::-1])
-        y = array(y_old[::-1])
+        x = np.array(x_old[::-1])
+        y = np.array(y_old[::-1])
     else:
-        x = array(x_old)
-        y = array(y_old)
+        x = np.array(x_old)
+        y = np.array(y_old)
 
     ## If the raw data does not support the full desired x-range, then extrapolate the ends of the data.
-    if (amin(x) > amin(x_new)):
-        x = append(amin(x_new), x)
-        y = append(y[0], y)
-    if (amax(x) < amax(x_new)):
-        x = append(x, amax(x_new))
-        y = append(y, y[-1])
+    if (np.amin(x) > np.amin(x_new)):
+        x = np.append(np.amin(x_new), x)
+        y = np.append(y[0], y)
+    if (np.amax(x) < np.amax(x_new)):
+        x = np.append(x, np.amax(x_new))
+        y = np.append(y, y[-1])
 
     if ('fill_value' in kwargs):
         del kwargs['fill_value']
