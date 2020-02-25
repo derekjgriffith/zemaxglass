@@ -48,6 +48,9 @@ class ZemaxGlassLibrary(object):
     plot_temperature_dependence
     plot_catalog_property_diagram
     '''
+    dispformulas = ['Schott', 'Sellmeier 1', 'Herzberger', 'Sellmeier 2', 'Conrady', 'Sellmeier 3',
+                    'Handbook of Optics 1', 'Handbook of Optics 2', 'Sellmeier 4', 'Extended',
+                    'Sellmeier 5', 'Extended 2', 'Extended 3']
 
     def __init__(self, dir=None, wavemin=400.0, wavemax=700.0, nwaves=300, catalog='all', sampling_domain='wavelength',
                  degree=3, debug=False):
@@ -145,14 +148,15 @@ class ZemaxGlassLibrary(object):
 
         for catalog in self.library:
             if (catalog not in catalogs): continue
-            print(catalog + ':')
+            print(catalog.capitalize() + ':')
             for glassname in self.library[catalog]:
                 if (glass != None) and (glassname != glass.upper()): continue
                 glassdict = self.library[catalog][glassname]
                 print('  ' + glassname + ':')
                 print('    nd       = ' + str(glassdict['nd']))
                 print('    vd       = ' + str(glassdict['vd']))
-                print('    dispform = ' + str(glassdict['dispform']))
+                print('    dispform = ' + str(glassdict['dispform']) + 
+                      ' the ' + ZemaxGlassLibrary.dispformulas[glassdict['dispform']] + ' formula.')
                 if ('tce' in glassdict):
                     print('    tce      = ' + str(glassdict['tce']))
                 if ('density' in glassdict):
@@ -358,6 +362,10 @@ class ZemaxGlassLibrary(object):
         elif (dispform == 12):  ## Extended2
             formula_rhs = cd[0] + (cd[1] * w**2) + (cd[2] * w**-2) + (cd[3] * w**-4) + (cd[4] * w**-6) + \
                           (cd[5] * w**-8) + (cd[6] * w**4) + (cd[7] * w**6)
+            indices = sqrt(formula_rhs)
+        elif (dispform == 13):  ## Extended3
+            formula_rhs = cd[0] + (cd[1] * w**2) + (cd[2] * w**4) + (cd[3] * w**-2) + (cd[4] * w**-4) + \
+                          (cd[5] * w**-6) + (cd[6] * w**-8) + (cd[7] * w**-10) + (cd[8] * w**-12)
             indices = sqrt(formula_rhs)
         else:
             raise ValueError('Dispersion formula #' + str(dispform) + ' (for glass=' + glass + ' in catalog=' + catalog + ') is not a valid choice.')
