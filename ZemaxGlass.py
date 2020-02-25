@@ -673,7 +673,7 @@ class ZemaxGlassLibrary(object):
         wavelength_nm : float
             The wavelength at which to evaluate the temperature dependence.
         temperatures : ndarray
-            Array containing the values for which the refractive indes shall be plotted.
+            Array containing the values for which the refractive index shall be plotted.
         '''
 
         index_vs_temp = []
@@ -738,7 +738,7 @@ class ZemaxGlassLibrary(object):
                 if (catalog == 'all') and (glass == 'AIR'): continue
                 if (catalog == 'all') and (abs(self.library[cat][glass]['vd']) < 1.0E-6): continue
 
-                if (prop1 in ('n0','n1','n2','n3','n4','n5','n6','n6','n8','n9')):
+                if (prop1 in ('n0','n1','n2','n3','n4','n5','n6','n7','n8','n9')):
                     j = int(prop1[1])
                     idx = int(prop1[1])
                     if ('interp_coeffs' not in self.library[cat][glass]):
@@ -757,7 +757,7 @@ class ZemaxGlassLibrary(object):
                 else:
                     p2_coeffs = self.library[cat][glass]['interp_coeffs'][j]
 
-                if (prop2 in ('n0','n1','n2','n3','n4','n5','n6','n6','n8','n9')):
+                if (prop2 in ('n0','n1','n2','n3','n4','n5','n6','n7','n8','n9')):
                     idx = int(prop2[1])
                     if ('interp_coeffs' not in self.library[cat][glass]):
                         #print('Calculating dispersion coefficients for "' + glass + '" ...')
@@ -773,9 +773,9 @@ class ZemaxGlassLibrary(object):
 
                 glassnames.append(glass)
 
-                if (prop1 in ('n0','n1','n2','n3','n4','n5','n6','n6','n8','n9')):
+                if (prop1 in ('n0','n1','n2','n3','n4','n5','n6','n7','n8','n9')):
                     p1.append(p1_coeffs)
-                if (prop2 in ('n0','n1','n2','n3','n4','n5','n6','n6','n8','n9')):
+                if (prop2 in ('n0','n1','n2','n3','n4','n5','n6','n7','n8','n9')):
                     p2.append(p2_coeffs)
 
             plt.plot(p1, p2, 'o', markersize=5)
