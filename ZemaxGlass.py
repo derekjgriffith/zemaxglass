@@ -53,7 +53,7 @@ class ZemaxGlassLibrary(object):
                     'Sellmeier 5', 'Extended 2', 'Extended 3']
 
     def __init__(self, dir=None, wavemin=400.0, wavemax=700.0, nwaves=300, catalog='all', sampling_domain='wavelength',
-                 degree=3, debug=False):
+                 degree=3, discard_off_band=False, debug=False):
         '''
         Initialize the glass library object.
 
@@ -71,6 +71,9 @@ class ZemaxGlassLibrary(object):
             Whether to sample the spectrum evenly in wavelength or wavenumber.
         degree : int, optional
             The polynomial degree to use for fitting the dispersion spectrum.
+        discard_off_band : boolean
+            If set True, will discard glasses where the valid spectral range does not fully cover
+            the interval wavemin to wavemax.
         '''
 
         self.debug = debug
@@ -82,7 +85,27 @@ class ZemaxGlassLibrary(object):
             dir = os.path.dirname(os.path.abspath(__file__)) + '/AGF_files/'
 
         self.dir = dir
-        self.library = read_library(dir, catalog=catalog)
+        self.library, self.cat_comment = read_library(dir, catalog=catalog)
+        # Remove glasses where requested wavelength interval is not covered by the valid interval of the dipersion data
+        if discard_off_band:
+            cat_discard_list = []
+            for catalogue in self.library.keys():
+                discard_list = []
+                for glass in self.library[catalogue].keys():
+                    lo_disp_lim = self.library[catalogue][glass]['ld'][0] * 1000.0  # nm
+                    hi_disp_lim = self.library[catalogue][glass]['ld'][1] * 1000.0  # nm
+                    if lo_disp_lim > wavemin or hi_disp_lim < wavemax: 
+                        print(f'Discarding {catalogue.capitalize()} {glass} (Valid Wavelengths {lo_disp_lim} to {hi_disp_lim} nm)')
+                        discard_list.append(glass)
+                # Ditch the discarded glasses
+                for discarded_glass in discard_list:
+                    del self.library[catalogue][discarded_glass]
+                # If the whole catalogue is now empty, discard entirely
+                if not self.library[catalogue]:
+                    print(f'------Discarding entire catalog {catalogue.capitalize()}')
+                    cat_discard_list.append(catalogue)
+            for discarded_cat in cat_discard_list:
+                del self.library[discarded_cat]
         self.pressure_ref = 1.0113e5   ## the dispersion measurement reference pressure, in Pascals
         self.temp_ref = 20.0           ## the dispersion measurement reference temperature, in degC
 
