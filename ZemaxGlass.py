@@ -931,17 +931,18 @@ def parse_glass_file(filename):
     f = open(filename, 'r', encoding=encoding_guess)
     cat_comment = ''  # A comment pertaining to the whole catalog file
     glass_catalog = {}
-    # print(f'Reading Catalog {filename}')
+    print(f'Reading Catalog {filename}')
     for line in f:
-        if not line.strip(): continue
+        if not line.strip(): continue  # Blank line
         if line.startswith('CC '):
             cat_comment = line[2:].strip()
             continue
         if line.startswith('NM '):  # Glass name, dispersion formula type, n_d v_d, status, melt frequency
             nm = line.split()
             glassname = nm[1]
-            # print(f'Reading Glass {glassname}')
+            print(f'Reading Glass {glassname}')
             glass_catalog[glassname] = {}
+            glass_catalog[glassname]['text'] = line + r'\n'  # Next glass data starts
             glass_catalog[glassname]['dispform'] = int(float(nm[2]))
             glass_catalog[glassname]['nd'] = float(nm[4])
             glass_catalog[glassname]['vd'] = float(nm[5])
@@ -949,21 +950,26 @@ def parse_glass_file(filename):
             glass_catalog[glassname]['status'] = 0 if (len(nm) < 8) else int(float(nm[7]))
             glass_catalog[glassname]['meltfreq'] = 0 if ((len(nm) < 9) or (nm.count('-') > 0)) else int(float(nm[8]))
         elif line.startswith('GC '):  # Individual glass comment
+            glass_catalog[glassname]['text'] += line + r'\n' 
             glass_catalog[glassname]['comment'] = line[2:].strip() 
         elif line.startswith('ED '):  # Thermal expansion data (TCE), density, relative partial dispersion
+            glass_catalog[glassname]['text'] += line + r'\n'
             ed = line.split()
             glass_catalog[glassname]['tce'] = float(ed[1])
             glass_catalog[glassname]['density'] = float(ed[3])
             glass_catalog[glassname]['dpgf'] = float(ed[4])
             glass_catalog[glassname]['ignore_thermal_exp'] = 0 if (len(ed) < 6) else int(float(ed[5]))
         elif line.startswith('CD '):  # Dispersion formula coefficients
+            glass_catalog[glassname]['text'] += line + r'\n'
             cd = line.split()[1:]
             glass_catalog[glassname]['cd'] = [float(a) for a in cd]
         elif line.startswith('TD '):  # dn/dT formula data
+            glass_catalog[glassname]['text'] += line + r'\n'
             td = line.split()[1:]
             if not td: continue     ## the Schott catalog sometimes uses an empty line for the "TD" label
             glass_catalog[glassname]['td'] = [float(a) for a in td]
         elif line.startswith('OD '):  # Relative cost and environmental data
+            glass_catalog[glassname]['text'] += line + r'\n'
             od = line.split()[1:]
             od = string_list_to_float_list(od)
             glass_catalog[glassname]['relcost'] = od[0]
@@ -976,9 +982,11 @@ def parse_glass_file(filename):
             else:
                 glass_catalog[glassname]['pr'] = -1.0
         elif line.startswith('LD '):  # Valid range for dispersion data
+            glass_catalog[glassname]['text'] += line + r'\n'
             ld = line.split()[1:]
             glass_catalog[glassname]['ld'] = [float(a) for a in ld]
         elif line.startswith('IT '):  # Transmission data
+            glass_catalog[glassname]['text'] += line + r'\n'
             it = line.split()[1:]
             it_row = [float(a) for a in it]
             if ('it' not in glass_catalog[glassname]):
@@ -999,7 +1007,7 @@ def parse_glass_file(filename):
             # Create them as numpy arrays as well
             glass_catalog[glassname]['it']['wavelength_np'] = np.array(glass_catalog[glassname]['it']['wavelength'])
             glass_catalog[glassname]['it']['transmission_np'] = np.array(glass_catalog[glassname]['it']['transmission'])
-            glass_catalog[glassname]['it']['thickness_np'] = np.array(glass_catalog[glassname]['it']['thickness'])
+            glass_catalog[glassname]['it']['thickness_np'] = np.array(glass_catalog[glassname]['it']['thickness']) 
 
     f.close()
 
