@@ -780,7 +780,7 @@ class ZemaxGlassLibrary(object):
                         print('Could not find valid interpolation coefficients for "' + glass + '" glass ...')
                         continue
                 else:
-                    p2_coeffs = self.library[cat][glass]['interp_coeffs'][j]
+                    p2_coeffs = self.library[cat][glass]['interp_coeffs']
 
                 if (prop2 in ('n0','n1','n2','n3','n4','n5','n6','n7','n8','n9')):
                     idx = int(prop2[1])
@@ -794,7 +794,7 @@ class ZemaxGlassLibrary(object):
                         print('Could not find valid interpolation coefficients for "' + glass + '" glass ...')
                         continue
                 else:
-                    p2_coeffs = self.library[cat][glass]['interp_coeffs'][j]
+                    p2_coeffs = self.library[cat][glass]['interp_coeffs']
 
                 glassnames.append(glass)
 
