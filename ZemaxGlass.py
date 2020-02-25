@@ -927,25 +927,35 @@ def parse_glass_file(filename):
                 glass_catalog[glassname]['pr'] = od[5]
             else:
                 glass_catalog[glassname]['pr'] = -1.0
-        elif line.startswith('LD '):
+        elif line.startswith('LD '):  # Valid range for dispersion data
             ld = line.split()[1:]
             glass_catalog[glassname]['ld'] = [float(a) for a in ld]
-        elif line.startswith('IT '):
+        elif line.startswith('IT '):  # Transmission data
             it = line.split()[1:]
             it_row = [float(a) for a in it]
             if ('it' not in glass_catalog[glassname]):
-                glass_catalog[glassname]['IT'] = {}
-            glass_catalog[glassname]['IT']['wavelength'] = it_row[0]
-            glass_catalog[glassname]['IT']['transmission'] = it_row[1]
+                glass_catalog[glassname]['it'] = {}
+                glass_catalog[glassname]['it']['wavelength'] = []
+                glass_catalog[glassname]['it']['transmission'] = []
+                glass_catalog[glassname]['it']['thickness'] = []
+            glass_catalog[glassname]['it']['wavelength'].append(it_row[0])
+            if len(it_row) > 1:
+                glass_catalog[glassname]['it']['transmission'].append(it_row[1])
+            else:
+                glass_catalog[glassname]['it']['transmission'].append(NaN)
 
             if len(it_row) > 2:
-                glass_catalog[glassname]['IT']['thickness'] = it_row[2]
+                glass_catalog[glassname]['it']['thickness'].append(it_row[2])
             else:
-                glass_catalog[glassname]['IT']['thickness'] = NaN
+                glass_catalog[glassname]['it']['thickness'].append(NaN)
+            # Create them as numpy arrays as well
+            glass_catalog[glassname]['it']['wavelength_np'] = array(glass_catalog[glassname]['it']['wavelength'])
+            glass_catalog[glassname]['it']['transmission_np'] = array(glass_catalog[glassname]['it']['transmission'])
+            glass_catalog[glassname]['it']['thickness_np'] = array(glass_catalog[glassname]['it']['thickness'])
 
     f.close()
 
-    return(glass_catalog)
+    return(glass_catalog, cat_comment)
 
 ## =================================================================================================
 def string_list_to_float_list(x):
