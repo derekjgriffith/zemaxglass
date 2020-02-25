@@ -877,39 +877,45 @@ def parse_glass_file(filename):
     Returns
     -------
     glass_catalog : dict
-        The dictionary containing glass data for all classes in the file.
+        The dictionary containing glass data for all glasses in the file.
     '''
 
     f = open(filename, 'r', encoding='latin1')
+    cat_comment = ''  # A comment pertaining to the whole catalog file
     glass_catalog = {}
-
+    # print(f'Reading Catalog {filename}')
     for line in f:
         if not line.strip(): continue
-        if line.startswith('CC '): continue
-        if line.startswith('NM '):
+        if line.startswith('CC '):
+            cat_comment = line[2:].strip()
+            continue
+        if line.startswith('NM '):  # Glass name, dispersion formula type, n_d v_d, status, melt frequency
             nm = line.split()
             glassname = nm[1]
+            # print(f'Reading Glass {glassname}')
             glass_catalog[glassname] = {}
-            glass_catalog[glassname]['dispform'] = int(nm[2])
+            glass_catalog[glassname]['dispform'] = int(float(nm[2]))
             glass_catalog[glassname]['nd'] = float(nm[4])
             glass_catalog[glassname]['vd'] = float(nm[5])
-            glass_catalog[glassname]['exclude_sub'] = 0 if (len(nm) < 7) else int(nm[6])
-            glass_catalog[glassname]['status'] = 0 if (len(nm) < 8) else int(nm[7])
-            glass_catalog[glassname]['meltfreq'] = 0 if ((len(nm) < 9) or (nm.count('-') > 0)) else int(nm[8])
-        elif line.startswith('ED '):
+            glass_catalog[glassname]['exclude_sub'] = 0 if (len(nm) < 7) else int(float(nm[6]))
+            glass_catalog[glassname]['status'] = 0 if (len(nm) < 8) else int(float(nm[7]))
+            glass_catalog[glassname]['meltfreq'] = 0 if ((len(nm) < 9) or (nm.count('-') > 0)) else int(float(nm[8]))
+        elif line.startswith('GC '):  # Individual glass comment
+            glass_catalog[glassname]['comment'] = line[2:].strip() 
+        elif line.startswith('ED '):  # Thermal expansion data (TCE), density, relative partial dispersion
             ed = line.split()
             glass_catalog[glassname]['tce'] = float(ed[1])
             glass_catalog[glassname]['density'] = float(ed[3])
             glass_catalog[glassname]['dpgf'] = float(ed[4])
-            glass_catalog[glassname]['ignore_thermal_exp'] = 0 if (len(ed) < 6) else int(ed[5])
-        elif line.startswith('CD '):
+            glass_catalog[glassname]['ignore_thermal_exp'] = 0 if (len(ed) < 6) else int(float(ed[5]))
+        elif line.startswith('CD '):  # Dispersion formula coefficients
             cd = line.split()[1:]
             glass_catalog[glassname]['cd'] = [float(a) for a in cd]
-        elif line.startswith('TD '):
+        elif line.startswith('TD '):  # dn/dT formula data
             td = line.split()[1:]
             if not td: continue     ## the Schott catalog sometimes uses an empty line for the "TD" label
             glass_catalog[glassname]['td'] = [float(a) for a in td]
-        elif line.startswith('OD '):
+        elif line.startswith('OD '):  # Relative cost and environmental data
             od = line.split()[1:]
             od = string_list_to_float_list(od)
             glass_catalog[glassname]['relcost'] = od[0]
