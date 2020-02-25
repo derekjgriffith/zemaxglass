@@ -882,14 +882,27 @@ def read_library(glassdir, catalog='all'):
     cat_comment = {}
 
     for f in files:
-        #print('Reading ' + f + ' ...')
+        # print('Reading ' + f + ' ...')
         this_catalog = os.path.basename(f)[:-4].lower()
         if (this_catalog.lower() not in catalogs) and (catalog != 'all'): continue
         glass_library[this_catalog], cat_comment[this_catalog] = parse_glass_file(f)
 
-    return(glass_library)
+    return(glass_library, cat_comment)
 
 ## =============================================================================
+from codecs import BOM_UTF8, BOM_UTF16_BE, BOM_UTF16_LE, BOM_UTF32_BE, BOM_UTF32_LE
+
+BOMS = (
+    (BOM_UTF8, "UTF-8"),
+    (BOM_UTF32_BE, "UTF-32-BE"),
+    (BOM_UTF32_LE, "UTF-32-LE"),
+    (BOM_UTF16_BE, "UTF-16-BE"),
+    (BOM_UTF16_LE, "UTF-16-LE"),
+)
+
+def check_bom(data):
+    return [encoding for bom, encoding in BOMS if data.startswith(bom)]
+
 def parse_glass_file(filename):
     '''
     Read a Zemax glass file (*.agf') and return its contents as a Python dictionary.
@@ -904,8 +917,18 @@ def parse_glass_file(filename):
     glass_catalog : dict
         The dictionary containing glass data for all glasses in the file.
     '''
-
-    f = open(filename, 'r', encoding='latin1')
+    # print(f'Opening Catalog {filename}')
+    # First try to guess the file encoding
+    f = open(filename, 'rb')  # First open in binary mode
+    data = f.read(20)  # Read a scrap of data from the start of the file
+    f.close()
+    encoding_guesses = check_bom(data)
+    if encoding_guesses:
+        encoding_guess = encoding_guesses[0]
+    else:
+        encoding_guess = 'latin-1'
+    # print(f'Encoding Guess {encoding_guess}')
+    f = open(filename, 'r', encoding=encoding_guess)
     cat_comment = ''  # A comment pertaining to the whole catalog file
     glass_catalog = {}
     # print(f'Reading Catalog {filename}')
