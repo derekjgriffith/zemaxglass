@@ -558,6 +558,107 @@ class ZemaxGlassLibrary(object):
 
         return
 
+    def plot_dispersion_diff(self, glass1, catalog1, glass2, catalog2, subtract_mean=False):
+        '''
+        Plot the difference in refractive index between two glasses (index of second glass minus index of first)
+
+        Parameters
+        ----------
+        glass1 : str
+            The name of the first glass in the difference plot.
+        catalog1 : str
+            The catalog containing the first glass.
+        glass2 : str
+            The name of the second glass in the difference plot.
+        catalog2 : str
+            The catalog containing the second glass.
+        subtract_mean : boolean
+            If set True, will subtract the mean difference before plotting. Default False.
+        '''
+
+        (x1, y1) = self.get_dispersion(glass1, catalog1)
+        (x2, y2) = self.get_dispersion(glass2, catalog2)
+        rin_diff = y2 - y1
+        if subtract_mean:
+            rin_diff -= rin_diff.mean()
+        fig = plt.figure(figsize=(10,5))
+        ax = fig.add_subplot(111)
+        ax.plot(x1, rin_diff, 'b-', linewidth=2)
+
+        plt.title(f'Index Difference between {catalog1.capitalize()} {glass1} and {catalog2.capitalize()} {glass2}')
+        plt.xlabel('wavelength (nm)')
+        plt.ylabel('refractive index difference')
+
+        ## Enforce the plotting range.
+        xmin = min(x1)
+        xmax = max(x1)
+        xrange = xmax - xmin
+        if (xrange < 1.0): xrange = 1.0
+        xbot = xmin - (0.05 * xrange)
+        xtop = xmax + (0.05 * xrange)
+
+        ymin = min(rin_diff)
+        ymax = max(rin_diff)
+        yrange = ymax - ymin
+        if (yrange < 1.0E-9): yrange = 1.0
+        ybot = ymin - (0.05 * yrange)
+        ytop = ymax + (0.05 * yrange)
+
+        ax.axis([xbot,xtop,ybot,ytop])
+
+        return
+
+    def plot_dispersion_ratio(self, glass1, catalog1, glass2, catalog2, subtract_mean=False):
+        '''
+        Plot the ratio in refractive index between two glasses (index of second glass divided by index of first)
+
+        Parameters
+        ----------
+        glass1 : str
+            The name of the first glass in the ratio plot.
+        catalog1 : str
+            The catalog containing the first glass.
+        glass2 : str
+            The name of the second glass in the ratio plot.
+        catalog2 : str
+            The catalog containing the second glass.
+        subtract_mean : boolean
+            If set True, will subtract the mean ratio before plotting. Default False.
+        '''
+
+        (x1, y1) = self.get_dispersion(glass1, catalog1)
+        (x2, y2) = self.get_dispersion(glass2, catalog2)
+        rin_ratio = y2 / y1
+        if subtract_mean:
+            rin_ratio -= rin_ratio.mean()
+        fig = plt.figure(figsize=(10,5))
+        ax = fig.add_subplot(111)
+        ax.plot(x1, rin_ratio, 'b-', linewidth=2)
+
+        plt.title(f'Index Ratio between {catalog1.capitalize()} {glass1} and {catalog2.capitalize()} {glass2}')
+        plt.xlabel('wavelength (nm)')
+        plt.ylabel('refractive index Ratio')
+
+        ## Enforce the plotting range.
+        xmin = min(x1)
+        xmax = max(x1)
+        xrange = xmax - xmin
+        if (xrange < 1.0): xrange = 1.0
+        xbot = xmin - (0.05 * xrange)
+        xtop = xmax + (0.05 * xrange)
+
+        ymin = min(rin_ratio)
+        ymax = max(rin_ratio)
+        yrange = ymax - ymin
+        if (yrange < 1.0E-9): yrange = 1.0
+        ybot = ymin - (0.05 * yrange)
+        ytop = ymax + (0.05 * yrange)
+
+        ax.axis([xbot,xtop,ybot,ytop])
+
+        return
+
+
     ## =========================
     def plot_temperature_dependence(self, glass, catalog, wavelength_nm, temperatures):
         '''
