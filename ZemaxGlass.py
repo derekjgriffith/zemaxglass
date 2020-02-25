@@ -715,7 +715,7 @@ class ZemaxGlassLibrary(object):
         return
 
     ## =========================
-    def plot_catalog_property_diagram(self, catalog='all', prop1='nd', prop2='vd', show_labels=True):
+    def plot_catalog_property_diagram(self, catalog='all', prop1='nd', prop2='vd', show_labels=True, figure_size=(12, 6)):
         '''
         Plot a scatter diagram of one glass property against another.
 
@@ -734,6 +734,8 @@ class ZemaxGlassLibrary(object):
             The glass data property to show along the ordinate (y-axis).
         show_labels : bool
             Whether to show the glass name labels near the data points.
+        figure_size : tuple of 2 numbers
+            Size of plot in x and y, Default is (12, 6)
         '''
 
         if (catalog == 'all'):
@@ -748,7 +750,7 @@ class ZemaxGlassLibrary(object):
         all_p1 = []
         all_p2 = []
 
-        fig = plt.figure(figsize=(12,6))
+        fig = plt.figure(figsize=figure_size)
         ax = plt.gca()
         ax.set_prop_cycle(cycler('color', colors))
 
