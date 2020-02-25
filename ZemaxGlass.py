@@ -854,12 +854,13 @@ def read_library(glassdir, catalog='all'):
 
     ## Get the set of catalog names. These keys will initialize the glasscat dictionary.
     glass_library = {}
+    cat_comment = {}
 
     for f in files:
         #print('Reading ' + f + ' ...')
         this_catalog = os.path.basename(f)[:-4].lower()
         if (this_catalog.lower() not in catalogs) and (catalog != 'all'): continue
-        glass_library[this_catalog] = parse_glass_file(f)
+        glass_library[this_catalog], cat_comment[this_catalog] = parse_glass_file(f)
 
     return(glass_library)
 
