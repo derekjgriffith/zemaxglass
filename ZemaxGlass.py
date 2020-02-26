@@ -85,7 +85,7 @@ class ZemaxGlassLibrary(object):
             dir = os.path.dirname(os.path.abspath(__file__)) + '/AGF_files/'
 
         self.dir = dir
-        self.library, self.cat_comment = read_library(dir, catalog=catalog)
+        self.library, self.cat_comment, self.cat_encoding = read_library(dir, catalog=catalog)
         # Remove glasses where requested wavelength interval is not covered by the valid interval of the dipersion data
         if discard_off_band:
             cat_discard_list = []
@@ -880,27 +880,38 @@ def read_library(glassdir, catalog='all'):
     ## Get the set of catalog names. These keys will initialize the glasscat dictionary.
     glass_library = {}
     cat_comment = {}
+    cat_encoding = {}
 
     for f in files:
         # print('Reading ' + f + ' ...')
         this_catalog = os.path.basename(f)[:-4].lower()
         if (this_catalog.lower() not in catalogs) and (catalog != 'all'): continue
-        glass_library[this_catalog], cat_comment[this_catalog] = parse_glass_file(f)
+        (glass_library[this_catalog], cat_comment[this_catalog], 
+            cat_encoding[this_catalog]) = parse_glass_file(f)
 
-    return(glass_library, cat_comment)
+    return(glass_library, cat_comment, cat_encoding)
 
 ## =============================================================================
 from codecs import BOM_UTF8, BOM_UTF16_BE, BOM_UTF16_LE, BOM_UTF32_BE, BOM_UTF32_LE
 
+# Define some Byte Order Markers (BOM) for Unicode encoded files
+# The BOM is a magic number appearing at the start of the file, U+FEFF, which indicates the
+# byte endian-ness. Most UTF-8 (ASCII compatible) encoded files do not have the BOM marker
+# and check_bom will not return anything, in which it will be assumed that the data is
+# 'latin-1' encoded.
 BOMS = (
     (BOM_UTF8, "UTF-8"),
-    (BOM_UTF32_BE, "UTF-32-BE"),
-    (BOM_UTF32_LE, "UTF-32-LE"),
     (BOM_UTF16_BE, "UTF-16-BE"),
     (BOM_UTF16_LE, "UTF-16-LE"),
+    (BOM_UTF32_BE, "UTF-32-BE"),
+    (BOM_UTF32_LE, "UTF-32-LE"),
 )
 
 def check_bom(data):
+    '''
+    Crude method of checking for the presence of the BOM magic number at the start of a data
+    fragment.
+    '''
     return [encoding for bom, encoding in BOMS if data.startswith(bom)]
 
 def parse_glass_file(filename):
@@ -919,9 +930,8 @@ def parse_glass_file(filename):
     '''
     # print(f'Opening Catalog {filename}')
     # First try to guess the file encoding
-    f = open(filename, 'rb')  # First open in binary mode
-    data = f.read(20)  # Read a scrap of data from the start of the file
-    f.close()
+    with open(filename, 'rb') as f:  # First open in binary mode
+        data = f.read(20)  # Read a scrap of data from the start of the file
     encoding_guesses = check_bom(data)
     if encoding_guesses:
         encoding_guess = encoding_guesses[0]
@@ -931,7 +941,8 @@ def parse_glass_file(filename):
     f = open(filename, 'r', encoding=encoding_guess)
     cat_comment = ''  # A comment pertaining to the whole catalog file
     glass_catalog = {}
-    print(f'Reading Catalog {filename}')
+    glassname = ''
+    # print(f'Reading Catalog {filename}')
     for line in f:
         if not line.strip(): continue  # Blank line
         if line.startswith('CC '):
@@ -940,9 +951,9 @@ def parse_glass_file(filename):
         if line.startswith('NM '):  # Glass name, dispersion formula type, n_d v_d, status, melt frequency
             nm = line.split()
             glassname = nm[1]
-            print(f'Reading Glass {glassname}')
+            # print(f'Reading Glass {glassname}')
             glass_catalog[glassname] = {}
-            glass_catalog[glassname]['text'] = line + r'\n'  # Next glass data starts
+            glass_catalog[glassname]['text'] = ''  # Next glass data starts with this
             glass_catalog[glassname]['dispform'] = int(float(nm[2]))
             glass_catalog[glassname]['nd'] = float(nm[4])
             glass_catalog[glassname]['vd'] = float(nm[5])
@@ -950,26 +961,21 @@ def parse_glass_file(filename):
             glass_catalog[glassname]['status'] = 0 if (len(nm) < 8) else int(float(nm[7]))
             glass_catalog[glassname]['meltfreq'] = 0 if ((len(nm) < 9) or (nm.count('-') > 0)) else int(float(nm[8]))
         elif line.startswith('GC '):  # Individual glass comment
-            glass_catalog[glassname]['text'] += line + r'\n' 
             glass_catalog[glassname]['comment'] = line[2:].strip() 
         elif line.startswith('ED '):  # Thermal expansion data (TCE), density, relative partial dispersion
-            glass_catalog[glassname]['text'] += line + r'\n'
             ed = line.split()
             glass_catalog[glassname]['tce'] = float(ed[1])
             glass_catalog[glassname]['density'] = float(ed[3])
             glass_catalog[glassname]['dpgf'] = float(ed[4])
             glass_catalog[glassname]['ignore_thermal_exp'] = 0 if (len(ed) < 6) else int(float(ed[5]))
         elif line.startswith('CD '):  # Dispersion formula coefficients
-            glass_catalog[glassname]['text'] += line + r'\n'
             cd = line.split()[1:]
             glass_catalog[glassname]['cd'] = [float(a) for a in cd]
         elif line.startswith('TD '):  # dn/dT formula data
-            glass_catalog[glassname]['text'] += line + r'\n'
             td = line.split()[1:]
             if not td: continue     ## the Schott catalog sometimes uses an empty line for the "TD" label
             glass_catalog[glassname]['td'] = [float(a) for a in td]
         elif line.startswith('OD '):  # Relative cost and environmental data
-            glass_catalog[glassname]['text'] += line + r'\n'
             od = line.split()[1:]
             od = string_list_to_float_list(od)
             glass_catalog[glassname]['relcost'] = od[0]
@@ -982,11 +988,9 @@ def parse_glass_file(filename):
             else:
                 glass_catalog[glassname]['pr'] = -1.0
         elif line.startswith('LD '):  # Valid range for dispersion data
-            glass_catalog[glassname]['text'] += line + r'\n'
             ld = line.split()[1:]
             glass_catalog[glassname]['ld'] = [float(a) for a in ld]
         elif line.startswith('IT '):  # Transmission data
-            glass_catalog[glassname]['text'] += line + r'\n'
             it = line.split()[1:]
             it_row = [float(a) for a in it]
             if ('it' not in glass_catalog[glassname]):
@@ -1007,11 +1011,16 @@ def parse_glass_file(filename):
             # Create them as numpy arrays as well
             glass_catalog[glassname]['it']['wavelength_np'] = np.array(glass_catalog[glassname]['it']['wavelength'])
             glass_catalog[glassname]['it']['transmission_np'] = np.array(glass_catalog[glassname]['it']['transmission'])
-            glass_catalog[glassname]['it']['thickness_np'] = np.array(glass_catalog[glassname]['it']['thickness']) 
+            glass_catalog[glassname]['it']['thickness_np'] = np.array(glass_catalog[glassname]['it']['thickness'])
+        if glassname:
+            glass_catalog[glassname]['text'] += line
 
     f.close()
-
-    return(glass_catalog, cat_comment)
+    if glassname:  # Strongly suggests file was read with correctly guessed encoding
+        cat_encoding = encoding_guess
+    else:
+        cat_encoding = ''
+    return(glass_catalog, cat_comment, cat_encoding)
 
 ## =================================================================================================
 def string_list_to_float_list(x):
