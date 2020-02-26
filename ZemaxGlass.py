@@ -21,6 +21,33 @@ __authors__ = 'Nathan Hagen'
 __license__ = 'MIT/X11 License'
 __contact__ = 'Nathan Hagen <and.the.light.shattered@gmail.com>'
 
+# Define some common spectral/line wavelengths commonly used in this context (all in nm)
+# Source Schott technical note TIE 29.
+wv_Hg_IR3 = 2325.42  # Shortwave infrared mercury line Hg
+wv_Hg_IR2 = 1970.09  # Shortwave infrared mercury line Hg
+wv_Hg_IR1 = 1529.582  # Shortwave infrared mercury line Hg
+wv_NdYAG = 1060.0  # Neodymium glass laser Nd
+wv_t = 1013.98  # Shortwave infrared Hg line
+wv_s = 852.11  # Near infrared Cs line 
+wv_r = 706.5188  # Red He line
+wv_C = 656.2725  # Red H line
+wv_C_prime = 643.8469  # Red Cd line
+wv_HeNe = 632.8  # Helium-Neon Laser
+wv_D = 589.2938  # Orange Na line
+wv_d = 587.5618  # Yellow He line
+wv_e = 546.074  # e green mercury line Hg
+wv_F = 486.1327  # F blue hydrogen line H
+wv_F_prime = 479.9914   # F' blue cadmium line Cd
+wv_g = 435.8343  # g blue mercury line Hg
+wv_h = 404.6561  # h violet mercury line Hg
+wv_i = 365.0146  # i ultraviolet mercury line Hg
+wv_Hg_UV1 = 334.1478  # ultraviolet mercury line Hg
+wv_Hg_UV2 = 312.5663  # ultraviolet mercury line Hg
+wv_Hg_UV3 = 296.7278  # ultraviolet mercury line Hg
+wv_Hg_UV4 = 280.4  # ultraviolet mercury line Hg
+wv_Hg_UV5 = 248.3  # ultraviolet mercury line Hg
+
+
 class ZemaxGlassLibrary(object):
     '''
     ZemaxGlassLibrary is a class to hold all of the information contained in a Zemax-format library of glass catalogs.
