@@ -836,7 +836,7 @@ class ZemaxGlassLibrary(object):
         if show_labels:
             ## Plot all of the glass labels offset by (5,5) pixels in (x,y) from the data point.
             trans_offset = offset_copy(ax.transData, fig=fig, x=5, y=5, units='dots')
-            for i in arange(alen(glassnames)):
+            for i in np.arange(np.alen(glassnames)):
                 #print('i=%i: glassname=%s, p1=%f, p2=%f' % (i, glassnames[i], p1[i], p2[i]))
                 plt.text(all_p1[i], all_p2[i], glassnames[i], fontsize=7, zorder=0, transform=trans_offset, color='0.5')
 
