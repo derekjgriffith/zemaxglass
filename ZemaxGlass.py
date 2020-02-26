@@ -21,7 +21,7 @@ __authors__ = 'Nathan Hagen'
 __license__ = 'MIT/X11 License'
 __contact__ = 'Nathan Hagen <and.the.light.shattered@gmail.com>'
 
-# Define some common spectral/line wavelengths commonly used in this context (all in nm)
+# Define some spectral/line wavelengths commonly used in this context (all in nm)
 # Source Schott technical note TIE 29.
 wv_Hg_IR3 = 2325.42  # Shortwave infrared mercury line Hg
 wv_Hg_IR2 = 1970.09  # Shortwave infrared mercury line Hg
@@ -46,7 +46,91 @@ wv_Hg_UV2 = 312.5663  # ultraviolet mercury line Hg
 wv_Hg_UV3 = 296.7278  # ultraviolet mercury line Hg
 wv_Hg_UV4 = 280.4  # ultraviolet mercury line Hg
 wv_Hg_UV5 = 248.3  # ultraviolet mercury line Hg
+wv_Hg = [wv_Hg_IR3, wv_Hg_IR2, wv_Hg_IR1, wv_e, wv_g, wv_h, wv_i, wv_Hg_UV1, wv_Hg_UV2, wv_Hg_UV3, wv_Hg_UV4, wv_Hg_UV5]
 
+def zemax_dispersion_formula(wv, dispform, coefficients):
+    '''
+    Calculate material refractive indices according to the various dispersion formulae defined in the Zemax manual.
+    For materials defined in Zemax glass catalogues, the returned indices will be relative to air at standard
+    temperature and pressure (20C and 1 atmosphere). The wavelengths are then also assumed to be
+    provided in air at the same conditions.
+
+    Parameters
+    ----------
+    wv : list or array of float
+        Wavelengths for which to perform the calculation. In air at the standard pressure and temperature. 
+        If any given wavlength is above 100.0 it is assumed to be in nm. Otherwise wavelength is assumed to be microns.
+    dispform : int
+        The index of the formula in the order provided in the Zemax manual and as defined in the .agf file format.
+        Range is 1 to 13. ValueError is thrown if not one of these.
+        1 : Schott
+        2 : Sellmeier 1
+        3 : Herzberger
+        4 : Sellmeier 2
+        5 : Conrady
+        6 : Sellmeier 3
+        7 : Handbook of Optics 1
+        8 : Handbook of Optics 2
+        9 : Sellmeier 4
+        10: Extended 1
+        11: Sellmeier 5
+        12: Extended 2
+        13: Extended 3
+    coefficients : list or array of float
+        Coefficents of the dispersion formula. Number of coefficients depends on the formula.
+    '''
+    w = np.asarray(wv, dtype=np.float)
+    # If wavelength is above 100.0 assume nm and divide by 1000, otherwise assume microns and no scaling is performed
+    unit_scaling = np.asarray(wv > 100.0, dtype=np.float) / 1000.0 + np.asarray(wv <= 100.0, dtype=np.float)
+    w *= unit_scaling  # Zemax formulae assume microns
+    cd = coefficients
+    if (dispform == 1):  ## Schott
+        formula_rhs = cd[0] + (cd[1] * w**2) + (cd[2] * w**-2) + (cd[3] * w**-4) + (cd[4] * w**-6) + (cd[5] * w**-8)
+        indices = np.sqrt(formula_rhs)
+    elif (dispform == 2):  ## Sellmeier1
+        formula_rhs = (cd[0] * w**2 / (w**2 - cd[1])) + (cd[2] * w**2 / (w**2 - cd[3])) + (cd[4] * w**2 / (w**2 - cd[5]))
+        indices = np.sqrt(formula_rhs + 1.0)
+    elif (dispform == 3):  ## Herzberger
+        L = 1.0 / (w**2 - 0.028)
+        indices = cd[0] + (cd[1] * L) + (cd[2] * L**2) + (cd[3] * w**2) + (cd[4] * w**4) + (cd[5] * w**6)
+    elif (dispform == 4):  ## Sellmeier2
+        formula_rhs = cd[0] + (cd[1] * w**2 / (w**2 - (cd[2])**2)) + (cd[3] * w**2 / (w**2 - (cd[4])**2))
+        indices = np.sqrt(formula_rhs + 1.0)
+    elif (dispform == 5):  ## Conrady
+        indices = cd[0] + (cd[1] / w) + (cd[2] / w**3.5)
+    elif (dispform == 6):  ## Sellmeier3
+        formula_rhs = (cd[0] * w**2 / (w**2 - cd[1])) + (cd[2] * w**2 / (w**2 - cd[3])) + \
+                        (cd[4] * w**2 / (w**2 - cd[5])) + (cd[6] * w**2 / (w**2 - cd[7]))
+        indices = np.sqrt(formula_rhs + 1.0)
+    elif (dispform == 7):  ## HandbookOfOptics1
+        formula_rhs = cd[0] + (cd[1] / (w**2 - cd[2])) - (cd[3] * w**2)
+        indices = np.sqrt(formula_rhs)
+    elif (dispform == 8):  ## HandbookOfOptics2
+        formula_rhs = cd[0] + (cd[1] * w**2 / (w**2 - cd[2])) - (cd[3] * w**2)
+        indices = np.sqrt(formula_rhs)
+    elif (dispform == 9):  ## Sellmeier4
+        formula_rhs = cd[0] + (cd[1] * w**2 / (w**2 - cd[2])) + (cd[3] * w**2 / (w**2 - cd[4]))
+        indices = np.sqrt(formula_rhs)
+    elif (dispform == 10):  ## Extended1
+        formula_rhs = cd[0] + (cd[1] * w**2) + (cd[2] * w**-2) + (cd[3] * w**-4) + (cd[4] * w**-6) + \
+                        (cd[5] * w**-8) + (cd[6] * w**-10) + (cd[7] * w**-12)
+        indices = np.sqrt(formula_rhs)
+    elif (dispform == 11):  ## Sellmeier5
+        formula_rhs = (cd[0] * w**2 / (w**2 - cd[1])) + (cd[2] * w**2 / (w**2 - cd[3])) + \
+                        (cd[4] * w**2 / (w**2 - cd[5])) + (cd[6] * w**2 / (w**2 - cd[7])) + \
+                        (cd[8] * w**2 / (w**2 - cd[9]))
+        indices = np.sqrt(formula_rhs + 1.0)
+    elif (dispform == 12):  ## Extended2
+        formula_rhs = cd[0] + (cd[1] * w**2) + (cd[2] * w**-2) + (cd[3] * w**-4) + (cd[4] * w**-6) + \
+                        (cd[5] * w**-8) + (cd[6] * w**4) + (cd[7] * w**6)
+        indices = np.sqrt(formula_rhs)
+    elif (dispform == 13):  ## Extended3
+        formula_rhs = cd[0] + (cd[1] * w**2) + (cd[2] * w**4) + (cd[3] * w**-2) + (cd[4] * w**-4) + \
+                        (cd[5] * w**-6) + (cd[6] * w**-8) + (cd[7] * w**-10) + (cd[8] * w**-12)
+        indices = np.sqrt(formula_rhs)
+    else:
+        raise ValueError('Dispersion formula #' + str(dispform) + ' is not a valid choice.')
+    return indices
 
 class ZemaxGlassLibrary(object):
     '''
@@ -183,8 +267,8 @@ class ZemaxGlassLibrary(object):
 
         Parameters
         ----------
-        catalog : str
-            The name of the catalog within the library to print.
+        catalog : str or list of str, optional
+            The name of the catalog(s) within the library to print. If not given, all catalogs will be printed.
         glass : str
             The name of the glass within the library to print.
         '''
@@ -289,7 +373,7 @@ class ZemaxGlassLibrary(object):
         return
 
     ## =========================
-    def get_dispersion(self, glass, catalog, T=None, P=None):
+    def get_dispersion(self, glass, catalog, T=None, P=None, save_indices=False):
         '''
         For a given glass, calculate the dispersion curve (refractive index as a function of wavelength in nm).
 
@@ -309,7 +393,10 @@ class ZemaxGlassLibrary(object):
             The temperature of the lens environment, in degC.
         P : float, optional
             The pressure of the lens environment in Pascals, e.g. air at normal conditions. For vacuum set this value to zero.
-
+        save_indices : boolean, optional
+            If set True, the calculated refractive index data will be saved to the glass/catalog instance.
+            Do *not* do this if you want to be able to plot the temperature dependence of the refractive index later on.
+            Default is False.
         Returns
         -------
         indices : ndarray
@@ -362,6 +449,8 @@ class ZemaxGlassLibrary(object):
             T_ref = 0.0        ## the dispersion measurement reference temperature in degC
 
         ## Calculating the index of air is a special case, for which we can give a fixed formula.
+        ## This is the formula used in Zemax, but over what wavelength region is this formula valid?
+        ## Reference : F. Kohlrausch, Praktische Physik, 1968, Vol 1, page 408
         if (glass.upper() == 'AIR'):
             T_ref = 20.0
             P_ref = self.pressure_ref   ## the dispersion measurement reference pressure in Pascals
@@ -373,52 +462,8 @@ class ZemaxGlassLibrary(object):
         if (dispform == 0):
             ## use this for AIR and VACUUM
             pass
-        elif (dispform == 1):
-            formula_rhs = cd[0] + (cd[1] * w**2) + (cd[2] * w**-2) + (cd[3] * w**-4) + (cd[4] * w**-6) + (cd[5] * w**-8)
-            indices = np.sqrt(formula_rhs)
-        elif (dispform == 2):  ## Sellmeier1
-            formula_rhs = (cd[0] * w**2 / (w**2 - cd[1])) + (cd[2] * w**2 / (w**2 - cd[3])) + (cd[4] * w**2 / (w**2 - cd[5]))
-            indices = np.sqrt(formula_rhs + 1.0)
-        elif (dispform == 3):  ## Herzberger
-            L = 1.0 / (w**2 - 0.028)
-            indices = cd[0] + (cd[1] * L) + (cd[2] * L**2) + (cd[3] * w**2) + (cd[4] * w**4) + (cd[5] * w**6)
-        elif (dispform == 4):  ## Sellmeier2
-            formula_rhs = cd[0] + (cd[1] * w**2 / (w**2 - (cd[2])**2)) + (cd[3] * w**2 / (w**2 - (cd[4])**2))
-            indices = np.sqrt(formula_rhs + 1.0)
-        elif (dispform == 5):  ## Conrady
-            indices = cd[0] + (cd[1] / w) + (cd[2] / w**3.5)
-        elif (dispform == 6):  ## Sellmeier3
-            formula_rhs = (cd[0] * w**2 / (w**2 - cd[1])) + (cd[2] * w**2 / (w**2 - cd[3])) + \
-                          (cd[4] * w**2 / (w**2 - cd[5])) + (cd[6] * w**2 / (w**2 - cd[7]))
-            indices = np.sqrt(formula_rhs + 1.0)
-        elif (dispform == 7):  ## HandbookOfOptics1
-            formula_rhs = cd[0] + (cd[1] / (w**2 - cd[2])) - (cd[3] * w**2)
-            indices = np.sqrt(formula_rhs)
-        elif (dispform == 8):  ## HandbookOfOptics2
-            formula_rhs = cd[0] + (cd[1] * w**2 / (w**2 - cd[2])) - (cd[3] * w**2)
-            indices = np.sqrt(formula_rhs)
-        elif (dispform == 9):  ## Sellmeier4
-            formula_rhs = cd[0] + (cd[1] * w**2 / (w**2 - cd[2])) + (cd[3] * w**2 / (w**2 - cd[4]))
-            indices = np.sqrt(formula_rhs)
-        elif (dispform == 10):  ## Extended1
-            formula_rhs = cd[0] + (cd[1] * w**2) + (cd[2] * w**-2) + (cd[3] * w**-4) + (cd[4] * w**-6) + \
-                          (cd[5] * w**-8) + (cd[6] * w**-10) + (cd[7] * w**-12)
-            indices = np.sqrt(formula_rhs)
-        elif (dispform == 11):  ## Sellmeier5
-            formula_rhs = (cd[0] * w**2 / (w**2 - cd[1])) + (cd[2] * w**2 / (w**2 - cd[3])) + \
-                          (cd[4] * w**2 / (w**2 - cd[5])) + (cd[6] * w**2 / (w**2 - cd[7])) + \
-                          (cd[8] * w**2 / (w**2 - cd[9]))
-            indices = np.sqrt(formula_rhs + 1.0)
-        elif (dispform == 12):  ## Extended2
-            formula_rhs = cd[0] + (cd[1] * w**2) + (cd[2] * w**-2) + (cd[3] * w**-4) + (cd[4] * w**-6) + \
-                          (cd[5] * w**-8) + (cd[6] * w**4) + (cd[7] * w**6)
-            indices = np.sqrt(formula_rhs)
-        elif (dispform == 13):  ## Extended3
-            formula_rhs = cd[0] + (cd[1] * w**2) + (cd[2] * w**4) + (cd[3] * w**-2) + (cd[4] * w**-4) + \
-                          (cd[5] * w**-6) + (cd[6] * w**-8) + (cd[7] * w**-10) + (cd[8] * w**-12)
-            indices = np.sqrt(formula_rhs)
         else:
-            raise ValueError('Dispersion formula #' + str(dispform) + ' (for glass=' + glass + ' in catalog=' + catalog + ') is not a valid choice.')
+            indices = zemax_dispersion_formula(w, dispform, cd)
 
         ## If 'TD' is included in the glass data, then include pressure and temperature dependence of the lens
         ## environment. From Schott's technical report "TIE-19: Temperature Coefficient of the Refractive Index".
@@ -441,9 +486,146 @@ class ZemaxGlassLibrary(object):
 
         ## Insert result back into the glass data. Do *not* do this if you want to be able to plot the temperature
         ## dependence of the refractive index.
-        #self.library[catalog][glass]['indices'] = indices
+        if save_indices:
+            self.library[catalog][glass]['indices'] = indices
 
         return(self.waves, indices)
+
+    def get_indices(self, wv=wv_d, catalog=None, glass=None):
+        '''
+        Get the refractive indices of a glass for a specified set of wavelngths.
+
+        Parameters
+        ----------
+        wv : list or numpy array of float, optional
+            Wavelengths at which to compute the refractive indices in nm or in microns.
+            If the wavelengths are below 100.0, units are assumed to be microns.
+            If the wavelengths are above 100.0, the units are assumed to be nanometers.
+            Zemax uses units of microns when specifiying wavelengths.
+            Default is the yellow Helium line at 587.5618 nm
+        glass : str or list of str, optional
+            Glass(es) for which to calculate the refractive indices. 
+            If not provided, all glasses in the catalog(s) will be assumed. 
+        catalog : str or list of str, optional
+            Catalogs in which to find the specified glass.
+            If not provided, all catalogs will be assumed.
+
+        Returns
+        -------
+        glasses : list of strings
+            List of glass names in the format 'catalog glass'.
+        indices : ndarray of float
+            Array of refractive indices. Wavelength varies across columns. Glasses vary down rows.             
+        '''
+        if (catalog == None):
+            catalogs = self.library.keys()
+        elif (len(catalog) > 1) and isinstance(catalog, list):
+            catalogs = catalog
+        else:
+            catalogs = [catalog]
+        catalog_glass_list = []
+        wv = np.asarray(wv, dtype=np.float)
+        indices = np.asarray([])
+        for this_catalog in self.library:
+            if (this_catalog not in catalogs): continue
+            if (glass == None):
+                glasses = self.library[this_catalog].keys()
+            elif isinstance(glass, list):
+                glasses = glass
+            else:
+                glasses = [glass]
+            for this_glass in glasses:
+                if this_glass not in self.library[this_catalog].keys(): continue  # Skip the glass if not in this catalog
+                catalog_glass = f'{this_catalog} {this_glass}'
+                catalog_glass_list.append(catalog_glass)
+                # Calculate the refractive index
+                glass_indices = zemax_dispersion_formula(wv, self.library[this_catalog][this_glass]['dispform'],
+                                                             self.library[this_catalog][this_glass]['cd'])
+                if indices.size > 0:
+                    indices = np.vstack((indices, glass_indices))
+                else:
+                    indices = glass_indices
+        
+        return catalog_glass_list, indices
+
+    def get_abbe_number(self, wv_centre=wv_d, wv_lo=wv_F, wv_hi=wv_C, catalog=None, glass=None):
+        '''
+        Calculate generalised Abbe numbers for glasses.
+
+        Parameters
+        ----------
+        wv_centre : float, optional
+            The centre wavelength to use for the generalised Abbe number calculation.
+            Default is the yellow Helium d line at 587.5618 nm
+        wv_lo : float, optional
+            The low wavelength to use for the generalised Abbe number calculation.
+            Default is the red Hydrogen C line at 656.2725 nm
+        wv_hi : float, optional
+            The high wavelength to use for the generalised Abbe number calculation.
+            Default is the blue Hydrogen F line at 486.1327 nm
+        glass : str or list of str, optional
+            Glass(es) for which to calculate the refractive indices. 
+            If not provided, all glasses in the catalog(s) will be assumed. 
+        catalog : str or list of str, optional
+            Catalogs in which to find the specified glass.
+            If not provided, all catalogs will be assumed.       
+
+        Returns
+        -------
+        glasses : list of strings
+            List of glass names in the format 'catalog glass'.
+        abbe : ndarray of float
+            Array of generalised Abbe numbers. 
+        '''
+        wv = np.asarray([wv_centre, wv_lo, wv_hi], dtype=np.float)
+        # First calculate the refractive indices at the relevant wavelengths
+        glass_names, indices = self.get_indices(wv, catalog=catalog, glass=glass)
+        # Calculate the generalised Abbe Number
+        abbe_numbers = (indices[:, 0] - 1.0) / (indices[:, 1] - indices[:, 2])
+        return glass_names, abbe_numbers
+
+    def get_relative_partial_dispersion(self, wv_x=wv_g, wv_y=wv_F, wv_lo=wv_F, wv_hi=wv_C, catalog=None, glass=None):
+        '''
+        Calculate generalised relative partial dipersion for glasses.
+        The relative partial dispersion is typically the drop in refractive index over a wavelength step in the shorter
+        wavelength region divided by the drop in wavelength over a wavelength step in a longer wavelength region.
+        The default calculation is for P_g,F relative partial dispersion, which is typically also listed
+        explicitly in the catalog.
+
+        Parameters
+        ----------
+        wv_x : float, optional
+            The numerator lower wavelength to use for the generalised Abbe number calculation.
+            Default is the deep blue Mercury g line at 435.8343 nm
+        wv_y : float, optional
+            The numerator upper wavelength to use for the generalised Abbe number calculation.
+            Default is the blue Hydrogen F line at 486.1327 nm         
+        wv_lo : float, optional
+            The denominator lower wavelength to use for the generalised Abbe number calculation.
+            Default is the red Hydrogen C line at 656.2725 nm
+        wv_hi : float, optional
+            The denominator high wavelength to use for the generalised Abbe number calculation.
+            Default is the blue Hydrogen F line at 486.1327 nm
+        glass : str or list of str, optional
+            Glass(es) for which to calculate the refractive indices. 
+            If not provided, all glasses in the catalog(s) will be assumed. 
+        catalog : str or list of str, optional
+            Catalogs in which to find the specified glass.
+            If not provided, all catalogs will be assumed.       
+
+        Returns
+        -------
+        glasses : list of strings
+            List of glass names in the format 'catalog glass'.
+        rel_partial_dispersion : ndarray of float
+            Array of generalised relative partial dispersions.  
+        '''
+        wv = np.asarray([wv_x, wv_y, wv_lo, wv_hi], dtype=np.float)
+        # First calculate the refractive indices at the relevant wavelengths
+        glass_names, indices = self.get_indices(wv, catalog=catalog, glass=glass)
+        # Calculate the generalised Abbe Number
+        rel_partial_dispersion = (indices[:, 0] - indices[:, 1]) / (indices[:, 2] - indices[:, 3])
+        return glass_names, rel_partial_dispersion
 
     ## =========================
     def get_polyfit_dispersion(self, glass, catalog):
