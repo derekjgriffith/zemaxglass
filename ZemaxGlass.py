@@ -594,17 +594,18 @@ class ZemaxGlassLibrary(object):
 
         Parameters
         ----------
+     
         wv_x : float, optional
-            The numerator lower wavelength to use for the generalised Abbe number calculation.
+            The numerator lower wavelength to use for the generalised partial dispersion number calculation.
             Default is the deep blue Mercury g line at 435.8343 nm
         wv_y : float, optional
-            The numerator upper wavelength to use for the generalised Abbe number calculation.
+            The numerator upper wavelength to use for the generalised partial dispersion calculation.
             Default is the blue Hydrogen F line at 486.1327 nm         
         wv_lo : float, optional
-            The denominator lower wavelength to use for the generalised Abbe number calculation.
+            The denominator lower wavelength to use for the generalised partial dispersion calculation.
             Default is the red Hydrogen C line at 656.2725 nm
         wv_hi : float, optional
-            The denominator high wavelength to use for the generalised Abbe number calculation.
+            The denominator high wavelength to use for the generalised partial dispersion calculation.
             Default is the blue Hydrogen F line at 486.1327 nm
         glass : str or list of str, optional
             Glass(es) for which to calculate the refractive indices. 
@@ -626,6 +627,64 @@ class ZemaxGlassLibrary(object):
         # Calculate the generalised Abbe Number
         rel_partial_dispersion = (indices[:, 0] - indices[:, 1]) / (indices[:, 2] - indices[:, 3])
         return glass_names, rel_partial_dispersion
+
+    def get_pair_rank_color_correction(self, wv_centre=wv_d, wv_x=wv_g, wv_y=wv_F, wv_lo=wv_F, wv_hi=wv_C, 
+                                    catalog=None, glass=None):
+        '''
+        Get glass pairwise ranks for color correction potential based on generalised Abbe number and relative partial dispersion.
+        The ranking is calculated as the difference in generalised Abbe number divided by the difference in generalised
+        relative partial dispersion. Glass pairs are favoured for color correction if there is a small difference in
+        relative partial dispersion combined with a large difference in Abbe number.
+
+        Parameters
+        ----------
+        wv_centre : float, optional
+            The centre wavelength to use for the generalised Abbe number calculation.
+            Default is the yellow Helium d line at 587.5618 nm           
+        wv_x : float, optional
+            The numerator lower wavelength to use for the generalised partial dispersion calculation.
+            Default is the deep blue Mercury g line at 435.8343 nm
+        wv_y : float, optional
+            The numerator upper wavelength to use for the generalised partial dispersion calculation.
+            Default is the blue Hydrogen F line at 486.1327 nm         
+        wv_lo : float, optional
+            The denominator lower wavelength to use for the generalised partial dispersion calculation.
+            Default is the red Hydrogen C line at 656.2725 nm
+        wv_hi : float, optional
+            The denominator high wavelength to use for the generalised partial dispersion calculation.
+            Default is the blue Hydrogen F line at 486.1327 nm
+        glass : str or list of str, optional
+            Glass(es) for which to calculate the outputs. 
+            If not provided, all glasses in the catalog(s) will be assumed. 
+        catalog : str or list of str, optional
+            Catalogs in which to find the specified glass.
+            If not provided, all catalogs will be assumed.       
+
+        Returns
+        -------
+        glasses_combo : list of strings
+            List of glass names in the format 'catalog glass + catalog glass'.
+            This list is ordered by color correction potential
+        rank : ndarray of float
+            Array of color correction potential rank.          
+        '''
+        # Calculate the generalised Abbe numbers
+        glass_names, abbe_number = self.get_abbe_number(wv_centre=wv_centre, wv_lo=wv_lo, wv_hi=wv_hi, 
+                                                         catalog=catalog, glass=glass)
+        # Calculate the generalised relative partial dispersion
+        glass_names, rel_part_disp = self.get_relative_partial_dispersion(wv_x=wv_x, wv_y=wv_y, wv_lo=wv_lo, wv_hi=wv_hi, 
+                                                         catalog=catalog, glass=glass)
+        # Replicate the matrices up to two dimensions
+        abbe_number, rel_part_disp = np.meshgrid(abbe_number, rel_part_disp)
+        # Calculate the difference in Abbe number divided by the difference in relative partial dispersion
+        rank = np.abs(abbe_number - abbe_number.T) / np.abs(rel_part_disp - rel_part_disp.T)
+        # Set all resulting Nan values to zero
+        rank = np.nan_to_num(rank)
+        glass1, glass2 = np.meshgrid(np.array(glass_names), np.array(glass_names))
+        rank_order = np.flip(rank.flatten().argsort())[::2]  # Take every second one because they are duplicated
+        # The last elements corresponding to the diagonal can also be discarded
+        rank_order = rank_order[:-rank.shape[0]]
+        return glass1.flatten()[rank_order], glass2.flatten()[rank_order], rank.flatten()[rank_order]
 
     ## =========================
     def get_polyfit_dispersion(self, glass, catalog):
