@@ -1,3 +1,4 @@
 *.pyc
 Notebooks/.ipynb_checkpoints/
 *.ipynb
+ZemaxGlass.egg-info/
