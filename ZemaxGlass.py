@@ -9,24 +9,33 @@ from matplotlib.transforms import offset_copy
 import colorsys
 from cycler import cycler
 import pdb
+from scipy.optimize import curve_fit, least_squares  # e.g. for fitting Buchdahl dispersion functions
+clear_output_possible = True
+try:
+    from IPython.display import clear_output
+except ImportError as e:
+    clear_output_possible = False
 
-'''
+
+
+"""
 This file contains a set of utilities for reading Zemax glass (*.agf) files, analyzing glass
 properties, and displaying glass data.
 
 See LICENSE.txt for a description of the MIT/X license for this file.
-'''
+"""
 
-__authors__ = 'Nathan Hagen'
+__authors__ = 'Nathan Hagen, Derek Griffith'
 __license__ = 'MIT/X11 License'
 __contact__ = 'Nathan Hagen <and.the.light.shattered@gmail.com>'
 
 # Define some spectral/line wavelengths commonly used in this context (all in nm)
 # Source Schott technical note TIE 29.
+# Note that Zemax uses units of microns when specifying wavelength
 wv_Hg_IR3 = 2325.42  # Shortwave infrared mercury line Hg
 wv_Hg_IR2 = 1970.09  # Shortwave infrared mercury line Hg
 wv_Hg_IR1 = 1529.582  # Shortwave infrared mercury line Hg
-wv_NdYAG = 1060.0  # Neodymium glass laser Nd
+wv_NdYAG = 1064.0  # Neodymium glass laser Nd
 wv_t = 1013.98  # Shortwave infrared Hg line
 wv_s = 852.11  # Near infrared Cs line 
 wv_r = 706.5188  # Red He line
@@ -46,10 +55,29 @@ wv_Hg_UV2 = 312.5663  # ultraviolet mercury line Hg
 wv_Hg_UV3 = 296.7278  # ultraviolet mercury line Hg
 wv_Hg_UV4 = 280.4  # ultraviolet mercury line Hg
 wv_Hg_UV5 = 248.3  # ultraviolet mercury line Hg
-wv_Hg = [wv_Hg_IR3, wv_Hg_IR2, wv_Hg_IR1, wv_e, wv_g, wv_h, wv_i, wv_Hg_UV1, wv_Hg_UV2, wv_Hg_UV3, wv_Hg_UV4, wv_Hg_UV5]
+wv_Hg = np.array([wv_Hg_IR3, wv_Hg_IR2, wv_Hg_IR1, wv_e, wv_g, wv_h, wv_i, wv_Hg_UV1, wv_Hg_UV2, wv_Hg_UV3, wv_Hg_UV4, wv_Hg_UV5])
+
+# Define "named" lines as a dict as well
+wv_dict = {"NdYAG":wv_NdYAG, "t": wv_t, "s": wv_s, "r": wv_r, "C": wv_C, "C'": wv_C_prime, "HeNe": wv_HeNe, "D": wv_D, "d":wv_d,
+           "e": wv_e, "F": wv_F, "F'": wv_F_prime, "g": wv_g, "h":wv_h, "i": wv_i}
+
+# Simple text-based progress bar, used during long computations
+def update_progress(progress, bar_length):
+    if isinstance(progress, int):
+        progress = float(progress)
+    if not isinstance(progress, float):
+        progress = 0
+    if progress < 0:
+        progress = 0
+    if progress >= 1:
+        progress = 1
+    block = int(round(bar_length * progress))
+    clear_output(wait = True)
+    text = "Progress: [{0}] {1:.1f}%".format( "#" * block + "-" * (bar_length - block), progress * 100)
+    print(text)           
 
 def zemax_dispersion_formula(wv, dispform, coefficients):
-    '''
+    """
     Calculate material refractive indices according to the various dispersion formulae defined in the Zemax manual.
     For materials defined in Zemax glass catalogues, the returned indices will be relative to air at standard
     temperature and pressure (20C and 1 atmosphere). The wavelengths are then also assumed to be
