@@ -38,8 +38,83 @@ print(all_glasses.cat_encoding)
 ```
 
 ```python
+wv=np.linspace(0.9, 1.7, 20)
+wv_center = 1.3
+alpha = 0.4
+print(wv)
+cat, glass, indices = all_glasses.get_indices(wv, catalog='ohara', glass='S-BSL7')
+cat, glass, n_center = all_glasses.get_indices(wv_center, catalog='ohara', glass='S-BSL7')
+print('-', cat, glass, '-')
+print(indices)
+print(n_center)
+```
+
+```python
+fit = ZemaxGlass.buchdahl_fit(wv, indices, wv_center, n_center, alpha)
+print(fit)
+fit_alpha = ZemaxGlass.buchdahl_fit_alpha(wv, indices, wv_center, n_center)
+print(fit_alpha)
+buch_omega = ZemaxGlass.buchdahl_omega(wv, wv_center, alpha)
+buch_indices = ZemaxGlass.buchdahl_model(wv, wv_center, n_center, alpha, fit[0], fit[1], fit[2])
+print(buch_omega)
+print(buch_indices)
+plt.plot(buch_omega, buch_indices)
+```
+
+```python
+# Try a different apha
+alpha = 0.0612
+print('Alpha = ', alpha)
+fit = ZemaxGlass.buchdahl_fit(wv, indices, wv_center, n_center, alpha)
+print(fit)
+buch_omega = ZemaxGlass.buchdahl_omega(wv, wv_center, alpha)
+buch_indices = ZemaxGlass.buchdahl_model3(wv, wv_center, n_center, alpha, fit[0], fit[1], fit[2])
+print(buch_omega)
+print(buch_indices)
+```
+
+```python
+plt.figure(figsize=(10,10))
+plt.plot(buch_omega, buch_indices)
+
+```
+
+```python
+new_fit = ZemaxGlass.buchdahl_find_alpha(wv, indices, wv_center, n_center, gtol=1.0e-7)
+print('Finishing fit', new_fit['x'])
+
+```
+
+```python
+fitx = new_fit['x']
+buch_omega_new = ZemaxGlass.buchdahl_omega(wv, wv_center, fitx[0])
+buch_indices_new = ZemaxGlass.buchdahl_model(wv, wv_center, n_center, fitx[0], fitx[1], fitx[2], fitx[3])
+```
+
+```python
+plt.figure(figsize=(10,10))
+plt.plot(buch_omega_new, buch_indices_new, buch_omega, buch_indices)
+```
+
+```python
+ohara = ZemaxGlass.ZemaxGlassLibrary(r'C:/Users/EZGRIF/Documents/Zemax/Glasscat/', catalog='ohara', wavemin=430.0, 
+                                       wavemax=1700.0, degree=10)
+cat, glass, buch_fits = ohara.buchdahl_find_alpha(wv, wv_center, show_progress=True)
+```
+
+```python
+# Get the mean alpha parameter for the unabridged Ohara catalogue
+buch_fits[:,0].mean()
+```
+
+```python
 heraeus = ZemaxGlass.ZemaxGlassLibrary(r'C:/Users/EZGRIF/Documents/Zemax/Glasscat/', catalog='heraeus', wavemin=430.0, 
                                        wavemax=1700.0, degree=10, discard_off_band=True)
+her_cat, her_glass, her_buch_fits = heraeus.buchdahl_find_alpha(wv, wv_center, show_progress=True)
+```
+
+```python
+buch_fits[:,0].mean()
 ```
 
 ```python
@@ -211,23 +286,7 @@ a.flatten()[rankorder]
 ```
 
 ```python
-boo = np.array(['asdfasdf', 'asdfsadfasdf', 'wewefwfwfe', 'sdfsadsd'])
-```
-
-```python
-a, b = np.meshgrid(boo, boo)
-```
-
-```python
-boo[(1,2,3)]
-```
-
-```python
-a
-```
-
-```python
-b
+np.vstack(([1,2,3],[4,5,6]))
 ```
 
 ```python

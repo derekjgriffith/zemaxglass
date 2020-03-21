@@ -9,24 +9,33 @@ from matplotlib.transforms import offset_copy
 import colorsys
 from cycler import cycler
 import pdb
+from scipy.optimize import curve_fit, least_squares  # e.g. for fitting Buchdahl dispersion functions
+clear_output_possible = True
+try:
+    from IPython.display import clear_output
+except ImportError as e:
+    clear_output_possible = False
 
-'''
+
+
+"""
 This file contains a set of utilities for reading Zemax glass (*.agf) files, analyzing glass
 properties, and displaying glass data.
 
 See LICENSE.txt for a description of the MIT/X license for this file.
-'''
+"""
 
-__authors__ = 'Nathan Hagen'
+__authors__ = 'Nathan Hagen, Derek Griffith'
 __license__ = 'MIT/X11 License'
 __contact__ = 'Nathan Hagen <and.the.light.shattered@gmail.com>'
 
 # Define some spectral/line wavelengths commonly used in this context (all in nm)
 # Source Schott technical note TIE 29.
+# Note that Zemax uses units of microns when specifying wavelength
 wv_Hg_IR3 = 2325.42  # Shortwave infrared mercury line Hg
 wv_Hg_IR2 = 1970.09  # Shortwave infrared mercury line Hg
 wv_Hg_IR1 = 1529.582  # Shortwave infrared mercury line Hg
-wv_NdYAG = 1060.0  # Neodymium glass laser Nd
+wv_NdYAG = 1064.0  # Neodymium glass laser Nd
 wv_t = 1013.98  # Shortwave infrared Hg line
 wv_s = 852.11  # Near infrared Cs line 
 wv_r = 706.5188  # Red He line
@@ -46,14 +55,33 @@ wv_Hg_UV2 = 312.5663  # ultraviolet mercury line Hg
 wv_Hg_UV3 = 296.7278  # ultraviolet mercury line Hg
 wv_Hg_UV4 = 280.4  # ultraviolet mercury line Hg
 wv_Hg_UV5 = 248.3  # ultraviolet mercury line Hg
-wv_Hg = [wv_Hg_IR3, wv_Hg_IR2, wv_Hg_IR1, wv_e, wv_g, wv_h, wv_i, wv_Hg_UV1, wv_Hg_UV2, wv_Hg_UV3, wv_Hg_UV4, wv_Hg_UV5]
+wv_Hg = np.array([wv_Hg_IR3, wv_Hg_IR2, wv_Hg_IR1, wv_e, wv_g, wv_h, wv_i, wv_Hg_UV1, wv_Hg_UV2, wv_Hg_UV3, wv_Hg_UV4, wv_Hg_UV5])
+
+# Define "named" lines as a dict as well
+wv_dict = {"NdYAG":wv_NdYAG, "t": wv_t, "s": wv_s, "r": wv_r, "C": wv_C, "C'": wv_C_prime, "HeNe": wv_HeNe, "D": wv_D, "d":wv_d,
+           "e": wv_e, "F": wv_F, "F'": wv_F_prime, "g": wv_g, "h":wv_h, "i": wv_i}
+
+# Simple text-based progress bar, used during long computations
+def update_progress(progress, bar_length):
+    if isinstance(progress, int):
+        progress = float(progress)
+    if not isinstance(progress, float):
+        progress = 0
+    if progress < 0:
+        progress = 0
+    if progress >= 1:
+        progress = 1
+    block = int(round(bar_length * progress))
+    clear_output(wait = True)
+    text = "Progress: [{0}] {1:.1f}%".format( "#" * block + "-" * (bar_length - block), progress * 100)
+    print(text)           
 
 # Catalog folders, original and updated to circa Feb 2020
 agfdir = os.path.dirname(os.path.abspath(__file__)) + '/AGF_files/'
 agfdir202002 = os.path.dirname(os.path.abspath(__file__)) + '/AGF_files/202002/'
 
 def zemax_dispersion_formula(wv, dispform, coefficients):
-    '''
+    """
     Calculate material refractive indices according to the various dispersion formulae defined in the Zemax manual.
     For materials defined in Zemax glass catalogues, the returned indices will be relative to air at standard
     temperature and pressure (20C and 1 atmosphere). The wavelengths are then also assumed to be
@@ -63,7 +91,7 @@ def zemax_dispersion_formula(wv, dispform, coefficients):
     ----------
     wv : list or array of float
         Wavelengths for which to perform the calculation. In air at the standard pressure and temperature. 
-        If any given wavlength is above 100.0 it is assumed to be in nm. Otherwise wavelength is assumed to be microns.
+        If any given wavelength is above 100.0 it is assumed to be in nm. Otherwise wavelength is assumed to be microns.
     dispform : int
         The index of the formula in the order provided in the Zemax manual and as defined in the .agf file format.
         Range is 1 to 13. ValueError is thrown if not one of these.
@@ -82,7 +110,7 @@ def zemax_dispersion_formula(wv, dispform, coefficients):
         13: Extended 3
     coefficients : list or array of float
         Coefficents of the dispersion formula. Number of coefficients depends on the formula.
-    '''
+    """
     w = np.asarray(wv, dtype=np.float)
     # If wavelength is above 100.0 assume nm and divide by 1000, otherwise assume microns and no scaling is performed
     unit_scaling = np.asarray(wv > 100.0, dtype=np.float) / 1000.0 + np.asarray(wv <= 100.0, dtype=np.float)
@@ -135,6 +163,302 @@ def zemax_dispersion_formula(wv, dispform, coefficients):
     else:
         raise ValueError('Dispersion formula #' + str(dispform) + ' is not a valid choice.')
     return indices
+
+def buchdahl_omega(wv, wv_center, alpha):
+    r"""
+    Calculate the Buchdahl dispersion relation spectral coordinates (omega) for given wavelengths, central wavelength and alpha parameter.
+
+    Parameters
+    ----------
+    wv : array of float
+        The wavelengths at which to calculate the Buchdahl omega dispersion relation spectral coordinates.
+        If any given wavelength is above 100.0 it is assumed to be in nm. Otherwise wavelength is assumed to be microns.
+    wv_center : float
+        The central wavelength for the spectral region under consideration. If greater than 100.0, nanometer units assumed,
+        otherwise microns.
+    alpha : float
+        The Buchdahl alpha parameter, generally a constant over a category or even an entire catalog of glasses.
+        However, alpha can also be tuned to give optimal Buchdahl dispersion formula fit for a specific glass.
+
+    Returns
+    -------
+    omega : array of float
+        Buchdahl omega spectral coordinates for the given wavelengths, computed as
+        $$\\omega=\\frac{\\lambda-\\lambda_0}{1+\\alpha(\\lambda-\\lambda_0)}$$.
+    """
+    wv = np.asarray(wv, dtype=np.float)
+    # If wavelength is above 100.0 assume nm and divide by 1000, otherwise assume microns and no scaling is performed
+    unit_scaling = np.asarray(wv > 100.0, dtype=np.float) / 1000.0 + np.asarray(wv <= 100.0, dtype=np.float)
+    wv *= unit_scaling  # Zemax formulae assume microns
+    # Same treatment for central wavelength, if above 100.0 assume nanometres and convert to microns
+    if wv_center > 100.0: wv_center /= 1000.0
+    omega = (wv - wv_center) / (1.0 + alpha * (wv - wv_center))
+    return omega
+
+def buchdahl_model(wv, wv_center, n_center, alpha, *argv):
+    r"""
+    Compute the refractive indices for the specified Buchdahl dispersion model at the specified wavelengths.
+
+    Parameters
+    ----------
+    wv : array of float
+        The wavelengths $\\lambda$ at which to calculate the Buchdahl omega dispersion relation spectral coordinates.
+        If any given wavelength is above 100.0 it is assumed to be in nm. Otherwise wavelength is assumed to be microns.
+    wv_center : float
+        The central wavelength $\lambda_0$ for the spectral region under consideration. If greater than 100.0, nanometer units assumed,
+        otherwise microns.
+    n_center : float
+        The refractive index $n_0$ at the central wavelength wv_center ($\\lambda_0$).        
+    alpha : float
+        The Buchdahl $\\alpha$ parameter, generally a constant over a category or even an entire catalog of glasses.
+        However, alpha can also be tuned to give optimal Buchdahl dispersion formula fit for a specific glass.
+    *argv : float
+        Buchdahl dispersion coefficients $\\nu$. Usually at most 3 (third order fit) coefficients.
+
+    Returns
+    -------
+    indices : Refractive indices computed at the specified wavelengths according to the Buchdahl model
+        $$n = n_center + \\nu_1\\omega + \\nu_2\\omega^2 + \\nu_3\\omega^3 + \\ldots$$,
+        where
+        $$\\omega=\\frac{\\lambda-\\lambda_0}{1+\\alpha(\\lambda-\\lambda_0)}$$.
+    """
+    omega = buchdahl_omega(wv, wv_center, alpha)
+    indices = n_center
+    for power, nu in enumerate(argv):
+        indices += nu * omega**(power+1.0)
+    return indices
+
+def buchdahl_model2(wv, wv_center, n_center, alpha, nu_1, nu_2):
+    r"""
+    Compute the refractive indices for the specified Buchdahl 2nd order dispersion model at the specified wavelengths.
+
+    Parameters
+    ----------
+    wv : array of float
+        The wavelengths $\\lambda$ at which to calculate the Buchdahl omega dispersion relation spectral coordinates.
+        If any given wavelength is above 100.0 it is assumed to be in nm. Otherwise wavelength is assumed to be microns.
+    wv_center : float
+        The central wavelength $\lambda_0$ for the spectral region under consideration. If greater than 100.0, nanometer units assumed,
+        otherwise microns.
+    n_center : float
+        The refractive index $n_center$ at the central wavelength wv_center ($\\lambda_0$).        
+    alpha : float
+        The Buchdahl $\\alpha$ parameter, generally a constant over a category or even an entire catalog of glasses.
+        However, alpha can also be tuned to give optimal Buchdahl dispersion formula fit for a specific glass.
+    nu_1 : float
+        Buchdahl dispersion coefficient $\\nu_1$. 
+    nu_2 : float
+        Buchdahl dispersion coefficient $\\nu_2$.
+
+    Returns
+    -------
+    indices : Refractive indices computed at the specified wavelengths according to the Buchdahl 2nd order model
+        $$n = n_center + \\nu_1\\omega + \\nu_2\\omega^2$$,
+        where
+        $$\\omega=\\frac{\\lambda-\\lambda_0}{1+\\alpha(\\lambda-\\lambda_0)}$$.
+    """
+    omega = buchdahl_omega(wv, wv_center, alpha)
+    indices = n_center + nu_1 * omega + nu_2 * omega**2.0
+    return indices
+
+def buchdahl_model3(wv, wv_center, n_center, alpha, nu_1, nu_2, nu_3):
+    r"""
+    Compute the refractive indices for the specified Buchdahl 3rd order dispersion model at the specified wavelengths.
+
+    Parameters
+    ----------
+    wv : array of float
+        The wavelengths $\\lambda$ at which to calculate the Buchdahl omega dispersion relation spectral coordinates.
+        If any given wavelength is above 100.0 it is assumed to be in nm. Otherwise wavelength is assumed to be microns.
+    wv_center : float
+        The central wavelength $\lambda_0$ for the spectral region under consideration. If greater than 100.0, nanometer units assumed,
+        otherwise microns.
+    n_center : float
+        The refractive index $n_0$ at the central wavelength wv_center ($\\lambda_0$).        
+    alpha : float
+        The Buchdahl $\\alpha$ parameter, generally a constant over a category or even an entire catalog of glasses.
+        However, alpha can also be tuned to give optimal Buchdahl dispersion formula fit for a specific glass.
+    nu_1 : float
+        Buchdahl dispersion coefficient $\\nu_1$. 
+    nu_2 : float
+        Buchdahl dispersion coefficient $\\nu_2$.
+    nu_3 : float
+        Buchdahl dispersion coefficient $\\nu_3$.        
+
+    Returns
+    -------
+    indices : Refractive indices computed at the specified wavelengths according to the Buchdahl 3rd order model
+        $$n = n_center + \\nu_1\\omega + \\nu_2\\omega^2 + \\nu_3\\omega^3$$,
+        where
+        $$\\omega=\\frac{\\lambda-\\lambda_0}{1+\\alpha(\\lambda-\\lambda_0)}$$.
+    """
+    omega = buchdahl_omega(wv, wv_center, alpha)
+    indices = n_center + nu_1 * omega + nu_2 * omega**2.0 + nu_3 * omega**3.0
+    return indices             
+
+def buchdahl_fit(wv, indices, wv_center, n_center, alpha, order=3):
+    r"""
+    Determine a Buchdahl dispersion function fit to a set of refractive indices at a given set of wavelengths.
+    The fit is performed using the non-linear least squares method. The Buchdahl alpha parameter is
+    considered fixed in this fitting procedure and must be provided. 
+    See buchdahl_fit_alpha() which allows alpha to vary as well.
+
+    Parameters
+    ----------
+    wv : array of float
+        Wavelengths at which the refractive index data is provided. Units assumed nm if wv > 100.0.
+    indices : array of float, same length as wv
+        Refractive indices at the specified wavelengths.
+    wv_center : float
+        Center wavelength. Assumed nm if above 100.0, otherwise micron.
+    n_center : float
+        Refractive index at the center wavelength.
+    alpha : float
+        The Buchdahl alpha parameter.
+    order : int
+        The Buchdahl polynomial order. Either 2 or 3, default is 3rd order.
+
+    Returns
+    -------
+    fit_parms : array of float
+        The best fit parameters in order of n_center, nu_1, nu_2 and (if order is 3) nu_3.
+    """
+    wv = np.asarray(wv, dtype=np.float)
+    # If wavelength is above 100.0 assume nm and divide by 1000, otherwise assume microns and no scaling is performed
+    unit_scaling = np.asarray(wv > 100.0, dtype=np.float) / 1000.0 + np.asarray(wv <= 100.0, dtype=np.float)
+    wv *= unit_scaling  # Zemax formulae assume microns
+    # Same treatment for central wavelength, if above 100.0 assume nanometres and convert to microns
+    if wv_center > 100.0: wv_center /= 1000.0
+    if order == 2:
+        # The lambda function takes the independent variable (x, the wavelengths) and the parameters we wish to fit.
+        # The parameters skipped in the lambda list are then fetched from the local namespace, in the following case, wv_center and alpha (not fitted)
+        fit_parms, pcov = curve_fit(lambda x, nu_1, nu_2: buchdahl_model2(x, wv_center, n_center, alpha, nu_1, nu_2), wv, indices)
+    elif order == 3:
+        fit_parms, pcov = curve_fit(lambda x, nu_1, nu_2, nu_3: buchdahl_model3(x, wv_center, n_center, alpha, nu_1, nu_2, nu_3), wv, indices)
+    else:
+        raise ValueError('Only 2nd and third order Buchdahl models can be fitted.')
+    # Fitted parameters are n_center, nu_1, nu_2 and (if order==3) nu_3    
+    return fit_parms
+
+def buchdahl_fit_alpha(wv, indices, wv_center, n_center, order=3):
+    r"""
+    Determine a Buchdahl dispersion function fit to a set of refractive indices at a given set of wavelengths.
+    The fit is performed using the non-linear least squares method. This fit includes fitting of the
+    Buchdahl alpha parameter. This will not, except by major coincidence, return the value of alpha
+    which provides a linear decline of wavelength with respect to the Buchdahl omega spectral parameter.
+    See buchdahl_fit() for fitting the Buchdahl model where the alpha parameter is determined and fixed.
+
+    Parameters
+    ----------
+    wv : array of float
+        Wavelengths at which the refractive index data is provided. Units assumed nm if wv > 100.0.
+    indices : array of float, same length as wv
+        Refractive indices at the specified wavelengths.
+    wv_center : float
+        Center wavelength. If above 100.0 assumed nm, otherwise micron units.
+    n_center : float
+        Refractive index at the center wavelength.
+    order : int
+        The Buchdahl polynomial order. Either 2 or 3, default is 3rd order.
+
+    Returns
+    -------
+    fit_parms : array of float
+        The best fit parameters in order of alpha, n_center, nu_1, nu_2 and (if order is 3) nu_3.
+
+    See Also
+    --------
+    buchdahl_fit(), buchdahl_model()
+    """
+    wv = np.asarray(wv, dtype=np.float)
+    # If wavelength is above 100.0 assume nm and divide by 1000, otherwise assume microns and no scaling is performed
+    unit_scaling = np.asarray(wv > 100.0, dtype=np.float) / 1000.0 + np.asarray(wv <= 100.0, dtype=np.float)
+    wv *= unit_scaling  # Zemax formulae assume microns
+    # Same treatment for central wavelength, if above 100.0 assume nanometres and convert to microns
+    if wv_center > 100.0: wv_center /= 1000.0
+    if order == 2:
+        # The lambda function takes the independent variable (x, the wavelengths) and the parameters we wish to fit
+        # The parameters skipped in the lambda list are then fetched from the local namespace, in the following case, wv_center
+        fit_parms, pcov = curve_fit(lambda x, alpha, nu_1, nu_2: buchdahl_model2(x, wv_center, n_center, alpha, nu_1, nu_2), wv, indices)
+    elif order == 3:
+        fit_parms, pcov = curve_fit(lambda x, alpha, nu_1, nu_2, nu_3: buchdahl_model3(x, wv_center, n_center, alpha, nu_1, nu_2, nu_3), wv, indices)
+    else:
+        raise ValueError('Only 2nd and third order Buchdahl models can be fitted.')
+    # Fitted parameters are alpha, n_center, nu_1, nu_2 and (if order==3) nu_3
+    return fit_parms
+
+def buchdahl_non_linear_error(parms, wv, indices, wv_center, n_center):
+    """
+    Calculate the deviation of a fitted Buchdahl index vs omega curve from linear.
+    This is a helper function to facilitate the use of scipy.least_squares()
+
+    Parameters
+    ----------
+    parms : list of float
+        Main parameters of the Buchdahl fit. parms[0] is alpha, parms[1] is nu_1, parms[2] is nu_2 and
+        (if the fit order is 3), parms[3] is nu_3
+    wv : array of float
+        Wavelengths at which the refractive index data is provided. Units assumed nm if wv > 100.0.
+    indices : array of float, same length as wv
+        Refractive indices at the specified wavelengths.
+    wv_center : float
+        Center wavelength. If above 100.0 assumed nm, otherwise micron units.
+    n_center : float
+        Refractive index at the center wavelength.
+
+    Returns
+    -------
+    non_linear_error : array of float
+        Refractive index linear error metric at each of the wavelengths.
+    """
+    omega = buchdahl_omega(wv, wv_center, parms[0])  # parms[0] is alpha
+    if len(parms) == 3:
+        # alpha, nu_1, nu_2
+        buch_indices = buchdahl_model2(wv, wv_center, n_center, parms[0], parms[1], parms[2])
+    elif len(parms) == 4:
+        # alpha, nu_1, nu_2, nu_3
+        buch_indices = buchdahl_model3(wv, wv_center, n_center, parms[0], parms[1], parms[2], parms[3])
+    lin_fit = np.polyfit(omega, buch_indices, 1)  # Fit straight line
+    indices_linear = lin_fit[0] * omega + lin_fit[1]
+    non_linear_error = np.sqrt((indices_linear - buch_indices)**2.0 + (indices_linear - indices)**2.0)
+    # print('Error :', non_linear_error)
+    return non_linear_error
+
+
+def buchdahl_find_alpha(wv, indices, wv_center, n_center, order=3, gtol=1.0e-9):
+    """
+    Find the Buchdahl alpha parameter which gives a refractive index versus omega curve that is closest to a straight line.
+
+    Parameters
+    ----------
+    wv : array of float
+        Wavelengths at which the refractive index data is provided. Units assumed nm if wv > 100.0.
+    indices : array of float, same length as wv
+        Refractive indices at the specified wavelengths.
+    wv_center : float
+        Center wavelength. If above 100.0 assumed nm, otherwise micron units.
+    n_center : float
+        Refractive index at the center wavelength.
+    order : int
+        The Buchdahl polynomial order. Either 2 or 3, default is 3rd order.
+    gtol : float
+        Controls the convergence accuracy. Default is 1.0e-9. Faster but less accurate convergence 
+        will be achieved using larger values. A value of 1.0e-8 will often suffice.  
+
+    Returns
+    -------
+    optimal_fit_parms : list of float
+        The Buchdahl alpha and nu coefficients that provide the best fit to the wavelength refractive
+        index data and with the imposed requirement that the index versus Buchdahl curve be close
+        to a straight line. The parameters are alpha, nu_1, nu_2 and (if the fit order is 3) nu_3.
+    """
+    # Run the fit with alpha fitting to get initial values
+    # Returned fit parms are alpha, n_center, nu_1, nu_2 and (if order=3) nu_3
+    start_fit_parms = buchdahl_fit_alpha(wv, indices, wv_center, n_center, order)
+    # The error function in this case is the non-linearity error
+    optimal_fit_parms = least_squares(lambda parms, x, y: buchdahl_non_linear_error(parms, x, y, wv_center, n_center), 
+                                        x0=start_fit_parms, gtol=gtol, args=(wv, indices))
+    return optimal_fit_parms
 
 class ZemaxGlassLibrary(object):
     '''
@@ -295,25 +619,60 @@ class ZemaxGlassLibrary(object):
                 print('    vd       = ' + str(glassdict['vd']))
                 print('    dispform = ' + str(glassdict['dispform']) + 
                       ' the ' + ZemaxGlassLibrary.dispformulas[glassdict['dispform']] + ' formula.')
-                if ('tce' in glassdict):
+                if ('tce' in glassdict):  # thermal coefficient of expansion
                     print('    tce      = ' + str(glassdict['tce']))
-                if ('density' in glassdict):
+                if ('density' in glassdict):  # density in g/cc ?
                     print('    density  = ' + str(glassdict['density']))
-                if ('dpgf' in glassdict):
+                if ('dpgf' in glassdict):  # relative partial dispersion
                     print('    dpgf     = ' + str(glassdict['dpgf']))
-                if ('cd' in glassdict):
+                if ('cd' in glassdict):  # dispersion formula coefficients
                     print('    cd       = ' + str(glassdict['cd']))
-                if ('td' in glassdict):
+                if ('td' in glassdict):  # thermal data
                     print('    td       = ' + str(glassdict['td']))
-                if ('od' in glassdict):
+                if ('od' in glassdict):  # environmental data
                     print('    od       = ' + str(glassdict['od']))
-                if ('ld' in glassdict):
+                if ('ld' in glassdict):  # valid range of dispersion relation
                     print('    ld       = ' + str(glassdict['ld']))
-                if ('interp_coeffs' in glassdict):
+                if ('interp_coeffs' in glassdict):  # interpolation coefficients for polynomial fit
                     print('    coeffs   = ' + repr(glassdict['interp_coeffs']))
 
         print('')
         return
+
+    def asDataFrame(self, fields, catalog=None, glass=None):
+        """
+        Return selected glass library data as a pandas DataFrame. By default, the catalog and glass name are always 
+        returned under the fields 'cat' and 'glass'.
+
+        TODO : This function still to be implemented
+
+        Parameters
+        ----------
+        fields : list of str
+            Can be one or more of the following :
+                'nd'  : refractive index at the d line
+                'vd'  : standard abbe dispersion number
+                'tce' : thermal coefficient of expansion
+                'density' : density in g/cc
+                'dpgf' : relative partial dispersion
+
+        """
+        if (catalog == None):
+            catalogs = self.library.keys()
+        elif (len(catalog) > 1) and isinstance(catalog, list):
+            catalogs = catalog
+        else:
+            catalogs = [catalog]
+
+        glass_df = []
+        for catalog in self.library:
+            if (catalog not in catalogs): continue
+            for glassname in self.library[catalog]:
+                if (glass != None) and (glassname != glass.upper()): continue
+                glassdict = self.library[catalog][glassname]
+                # Compile a tuple to add to the dataframe
+        return glass_df
+                
 
     ## =============================================================================
     def simplify_schott_catalog(self, zealous=False):
@@ -506,7 +865,7 @@ class ZemaxGlassLibrary(object):
             If the wavelengths are below 100.0, units are assumed to be microns.
             If the wavelengths are above 100.0, the units are assumed to be nanometers.
             Zemax uses units of microns when specifiying wavelengths.
-            Default is the yellow Helium line at 587.5618 nm
+            Default is the yellow Helium d line at 587.5618 nm
         glass : str or list of str, optional
             Glass(es) for which to calculate the refractive indices. 
             If not provided, all glasses in the catalog(s) will be assumed. 
@@ -527,7 +886,8 @@ class ZemaxGlassLibrary(object):
             catalogs = catalog
         else:
             catalogs = [catalog]
-        catalog_glass_list = []
+        catalog_list = []  # This will be compiled per glass and returned
+        glass_list = []
         wv = np.asarray(wv, dtype=np.float)
         indices = np.asarray([])
         for this_catalog in self.library:
@@ -540,8 +900,8 @@ class ZemaxGlassLibrary(object):
                 glasses = [glass]
             for this_glass in glasses:
                 if this_glass not in self.library[this_catalog].keys(): continue  # Skip the glass if not in this catalog
-                catalog_glass = f'{this_catalog} {this_glass}'
-                catalog_glass_list.append(catalog_glass)
+                catalog_list.append(this_catalog)
+                glass_list.append(this_glass)
                 # Calculate the refractive index
                 glass_indices = zemax_dispersion_formula(wv, self.library[this_catalog][this_glass]['dispform'],
                                                              self.library[this_catalog][this_glass]['cd'])
@@ -550,7 +910,7 @@ class ZemaxGlassLibrary(object):
                 else:
                     indices = glass_indices
         
-        return catalog_glass_list, indices
+        return catalog_list, glass_list, indices
 
     def get_abbe_number(self, wv_centre=wv_d, wv_lo=wv_F, wv_hi=wv_C, catalog=None, glass=None):
         '''
@@ -583,10 +943,10 @@ class ZemaxGlassLibrary(object):
         '''
         wv = np.asarray([wv_centre, wv_lo, wv_hi], dtype=np.float)
         # First calculate the refractive indices at the relevant wavelengths
-        glass_names, indices = self.get_indices(wv, catalog=catalog, glass=glass)
+        cat_names, glass_names, indices = self.get_indices(wv, catalog=catalog, glass=glass)
         # Calculate the generalised Abbe Number
         abbe_numbers = (indices[:, 0] - 1.0) / (indices[:, 1] - indices[:, 2])
-        return glass_names, abbe_numbers
+        return cat_names, glass_names, abbe_numbers
 
     def get_relative_partial_dispersion(self, wv_x=wv_g, wv_y=wv_F, wv_lo=wv_F, wv_hi=wv_C, catalog=None, glass=None):
         '''
@@ -627,10 +987,10 @@ class ZemaxGlassLibrary(object):
         '''
         wv = np.asarray([wv_x, wv_y, wv_lo, wv_hi], dtype=np.float)
         # First calculate the refractive indices at the relevant wavelengths
-        glass_names, indices = self.get_indices(wv, catalog=catalog, glass=glass)
+        cat_names, glass_names, indices = self.get_indices(wv, catalog=catalog, glass=glass)
         # Calculate the generalised Abbe Number
         rel_partial_dispersion = (indices[:, 0] - indices[:, 1]) / (indices[:, 2] - indices[:, 3])
-        return glass_names, rel_partial_dispersion
+        return cat_names, glass_names, rel_partial_dispersion
 
     def get_pair_rank_color_correction(self, wv_centre=wv_d, wv_x=wv_g, wv_y=wv_F, wv_lo=wv_F, wv_hi=wv_C, 
                                     catalog=None, glass=None):
@@ -666,17 +1026,22 @@ class ZemaxGlassLibrary(object):
 
         Returns
         -------
-        glasses_combo : list of strings
-            List of glass names in the format 'catalog glass + catalog glass'.
-            This list is ordered by color correction potential
+        cat1 : list of strings
+            Catalog from which glass1 comes
+        cat2 : list of strings
+            Catalog from which glass 2 comes
+        glass1 : list of strings
+            First glass in pair, ranked by color correction potential
+        glass2 : list of strings
+            Second glass in pair in same rank order as all other outputs
         rank : ndarray of float
-            Array of color correction potential rank.          
+            Array of color correction potential rank.
         '''
         # Calculate the generalised Abbe numbers
-        glass_names, abbe_number = self.get_abbe_number(wv_centre=wv_centre, wv_lo=wv_lo, wv_hi=wv_hi, 
+        cat_names, glass_names, abbe_number = self.get_abbe_number(wv_centre=wv_centre, wv_lo=wv_lo, wv_hi=wv_hi, 
                                                          catalog=catalog, glass=glass)
         # Calculate the generalised relative partial dispersion
-        glass_names, rel_part_disp = self.get_relative_partial_dispersion(wv_x=wv_x, wv_y=wv_y, wv_lo=wv_lo, wv_hi=wv_hi, 
+        cat_names, glass_names, rel_part_disp = self.get_relative_partial_dispersion(wv_x=wv_x, wv_y=wv_y, wv_lo=wv_lo, wv_hi=wv_hi, 
                                                          catalog=catalog, glass=glass)
         # Replicate the matrices up to two dimensions
         abbe_number, rel_part_disp = np.meshgrid(abbe_number, rel_part_disp)
@@ -684,11 +1049,13 @@ class ZemaxGlassLibrary(object):
         rank = np.abs(abbe_number - abbe_number.T) / np.abs(rel_part_disp - rel_part_disp.T)
         # Set all resulting Nan values to zero
         rank = np.nan_to_num(rank)
+        cat1, cat2 = np.meshgrid(np.array(cat_names), np.array(cat_names))
         glass1, glass2 = np.meshgrid(np.array(glass_names), np.array(glass_names))
         rank_order = np.flip(rank.flatten().argsort())[::2]  # Take every second one because they are duplicated
         # The last elements corresponding to the diagonal can also be discarded
         rank_order = rank_order[:-rank.shape[0]]
-        return glass1.flatten()[rank_order], glass2.flatten()[rank_order], rank.flatten()[rank_order]
+        return cat1.flatten()[rank_order], cat2.flatten()[rank_order], \
+               glass1.flatten()[rank_order], glass2.flatten()[rank_order], rank.flatten()[rank_order]
 
     ## =========================
     def get_polyfit_dispersion(self, glass, catalog):
@@ -725,6 +1092,68 @@ class ZemaxGlassLibrary(object):
         self.library[catalog][glass]['interp_indices'] = interp_indices
 
         return(waves, interp_indices)
+
+    def buchdahl_find_alpha(self, wv, wv_center, order=3, catalog=None, glass=None, gtol=1.0e-9, 
+                            show_progress=False):
+        """
+        Fit a Buchdahl dispersion function to the specified glasses and catalogs.
+        Every glass will return with its own alpha value and therefore the listed Buchdahl
+        coefficients are NOT COMPATIBLE with each other for glass selection purposes.
+
+        Once the optimal alpha value for a collection of glasses has been selected using this
+        method, the method buchdahl_fit() should be used with the selected alpha, which
+        will then recompute the Buchdahl fit using a consistent alpha for all glasses in the
+        collection.
+
+
+        Parameters
+        ----------
+        wv : array of float
+            Wavelength samples to use for performing the fit. If > 100.0, units of nm are assumed, otherwise microns.
+        wv_center : float
+            The center (reference) wavelength to use for the Buchdahl fit. Should be in the range of wv.
+        order : int, optional
+            The order of the Buchdahl fit. Only order 2 and 3 are supported. Defaults to 3.
+        catalog : list of str, optional
+            A list of catalogs to be processed. Defaults to all catalogs in the library.
+        glass : list of string, optional
+            List of glasses to process. Defaults to all glasses in the catalogs.
+        gtol : float, optional
+            Convergence demand parameter for best fitting of Buchdahl alpha so as to provide as close to linear
+            relationship between Buchdahl omega spectral variable and refractive index.
+            Defaults to 1.0e-9, but 1.0e-8 can be considered to speed up computational convergence.
+        show_progress : boolean
+            If set True, shows a simple text progress bar for all the requested glasses.
+            Default is False (no progress bar is shown). Only works if IPython is installed.
+
+        Returns
+        -------
+        cat_list : list of str
+            List of catalogs from which the corresponding glasses come.
+        glass_list : list of str
+            List of glass names
+        buch_fits : ndarray of float
+            Buchdahl fit parameters for the listed glasses, where buch_fits[:, 0] is alpha,
+            buch_fits[:, 1] is nu_1, buch_fits[:, 2] is nu_2 and (if order==3) buch_fits[:, 3] is nu_3 
+
+
+        """
+        # Determine the refractive indices of the glasses at the given wavelengths
+        cat_list, glass_list, indices = self.get_indices(wv, catalog=catalog, glass=glass)
+        # Determine the refractive index of the glass at the center wavelength
+        cat_list, glass_list, n_centers = self.get_indices(wv_center, catalog=catalog, glass=glass)
+        # Find the most linear alpha value and Buchdahl coefficients (2 or 3)
+        for i_glass in range(len(glass_list)):
+            # The following will return a list of float, alpha, nu_1, nu_2 and (if order==3) nu_3
+            buch_fit = buchdahl_find_alpha(wv, indices[i_glass, :], wv_center, n_centers[i_glass], order=order, gtol=gtol)
+            if i_glass == 0:
+                buch_fits = np.array(buch_fit['x'])
+            else:
+                buch_fits = np.vstack((buch_fits, np.array(buch_fit['x'])))
+            if show_progress and clear_output_possible:
+                update_progress((i_glass + 1.0) / len(glass_list), bar_length=50)
+        return cat_list, glass_list, buch_fits
+     
 
     ## =============================================================================
     def cull_library(self, key1, tol1, key2=None, tol2=None):
