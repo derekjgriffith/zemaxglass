@@ -48,6 +48,10 @@ wv_Hg_UV4 = 280.4  # ultraviolet mercury line Hg
 wv_Hg_UV5 = 248.3  # ultraviolet mercury line Hg
 wv_Hg = [wv_Hg_IR3, wv_Hg_IR2, wv_Hg_IR1, wv_e, wv_g, wv_h, wv_i, wv_Hg_UV1, wv_Hg_UV2, wv_Hg_UV3, wv_Hg_UV4, wv_Hg_UV5]
 
+# Catalog folders, original and updated to circa Feb 2020
+agfdir = os.path.dirname(os.path.abspath(__file__)) + '/AGF_files/'
+agfdir202002 = os.path.dirname(os.path.abspath(__file__)) + '/AGF_files/202002/'
+
 def zemax_dispersion_formula(wv, dispform, coefficients):
     '''
     Calculate material refractive indices according to the various dispersion formulae defined in the Zemax manual.
