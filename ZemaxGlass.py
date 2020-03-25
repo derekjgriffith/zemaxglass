@@ -15,7 +15,8 @@ try:
     from IPython.display import clear_output
 except ImportError as e:
     clear_output_possible = False
-
+import pandas as pd
+import re
 
 
 """
@@ -487,8 +488,8 @@ class ZemaxGlassLibrary(object):
                     'Handbook of Optics 1', 'Handbook of Optics 2', 'Sellmeier 4', 'Extended',
                     'Sellmeier 5', 'Extended 2', 'Extended 3']
 
-    def __init__(self, dir=None, wavemin=400.0, wavemax=700.0, nwaves=300, catalog='all', sampling_domain='wavelength',
-                 degree=3, discard_off_band=False, debug=False):
+    def __init__(self, dir=None, wavemin=400.0, wavemax=700.0, nwaves=300, catalog='all', glass_match=None,
+                sampling_domain='wavelength', degree=3, discard_off_band=False, debug=False):
         '''
         Initialize the glass library object.
 
@@ -502,6 +503,9 @@ class ZemaxGlassLibrary(object):
             The number of wavelength samples to use.
         catalog : str
             The catalog or list of catalogs to look for in "dir".
+        glass_match : str
+            Regular expression to match. The glass is only included in the returned instance if the glass name
+            matches this regular expression. Default is None - all glasses in catalog are returned.     
         sampling_domain : str, {'wavelength','wavenumber'}
             Whether to sample the spectrum evenly in wavelength or wavenumber.
         degree : int, optional
@@ -541,6 +545,25 @@ class ZemaxGlassLibrary(object):
                     cat_discard_list.append(catalogue)
             for discarded_cat in cat_discard_list:
                 del self.library[discarded_cat]
+        # Discard glasses that do not match the regular expression
+        if glass_match is not None:
+            cat_discard_list = []
+            for catalogue in self.library.keys():
+                discard_list = []
+                for glass in self.library[catalogue].keys():
+                    if not re.match(glass_match, glass):
+                        # print(f'Discarding {catalogue.capitalize()} {glass} RE mismatch')
+                        discard_list.append(glass)
+                # Ditch the discarded glasses
+                for discarded_glass in discard_list:
+                    del self.library[catalogue][discarded_glass]
+                # If the whole catalogue is now empty, discard entirely
+                if not self.library[catalogue]:
+                    # print(f'------Discarding entire catalog {catalogue.capitalize()}')
+                    cat_discard_list.append(catalogue)
+            for discarded_cat in cat_discard_list:
+                del self.library[discarded_cat]            
+
         self.pressure_ref = 1.0113e5   ## the dispersion measurement reference pressure, in Pascals
         self.temp_ref = 20.0           ## the dispersion measurement reference temperature, in degC
 
@@ -932,10 +955,12 @@ class ZemaxGlassLibrary(object):
 
         Returns
         -------
-        glasses : list of strings
-            List of glass names in the format 'catalog glass'.
-        abbe : ndarray of float
-            Array of generalised Abbe numbers. 
+        cat_names : list of str
+            List of catalogs for the follownig list of glasses.
+        glass_names : list of str
+            List of same length as cat_names, giving the glasses.
+        abbe_numbers : ndarray of float
+            Array of generalised Abbe numbers. Same length as cat_names and glass_names.
         '''
         wv = np.asarray([wv_centre, wv_lo, wv_hi], dtype=np.float)
         # First calculate the refractive indices at the relevant wavelengths
