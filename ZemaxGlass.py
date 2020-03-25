@@ -661,19 +661,29 @@ class ZemaxGlassLibrary(object):
     def asDataFrame(self, fields, catalog=None, glass=None):
         """
         Return selected glass library data as a pandas DataFrame. By default, the catalog and glass name are always 
-        returned under the fields 'cat' and 'glass'.
-
-        TODO : This function still to be implemented
+        returned under the fields 'cat' and 'gls'.
 
         Parameters
         ----------
         fields : list of str
+            List of fields to include in the DataFrame
             Can be one or more of the following :
+                'dispform' : form of the dispersion equation. See the Zemax manual.
                 'nd'  : refractive index at the d line
                 'vd'  : standard abbe dispersion number
                 'tce' : thermal coefficient of expansion
                 'density' : density in g/cc
-                'dpgf' : relative partial dispersion
+                'dpgf' : catalog relative partial dispersion
+                'status' : glass status
+                'meltfreq' : Melt frequency of the glass
+                'comment' : string comment found in the catalog file
+                'relcost' : relative cost of the glass to N-BK7/S-BSL7
+                'cr' : Various environmental resistance ratings
+                'fr' :
+                'sr' :
+                'ar' :
+                'pr' :
+            Other scalar fields that have been added to the glass instance may also work.
 
         """
         if (catalog == None):
@@ -682,14 +692,17 @@ class ZemaxGlassLibrary(object):
             catalogs = catalog
         else:
             catalogs = [catalog]
-
-        glass_df = []
+        # TODO : Check that the fields exist?
+        glass_df = pd.DataFrame(columns=['cat', 'gls'] + fields)
         for catalog in self.library:
             if (catalog not in catalogs): continue
             for glassname in self.library[catalog]:
                 if (glass != None) and (glassname != glass.upper()): continue
-                glassdict = self.library[catalog][glassname]
-                # Compile a tuple to add to the dataframe
+                # Extract the required data
+                glassdict = {field: self.library[catalog][glassname][field] for field in fields}
+                glassdict['cat'] = catalog
+                glassdict['gls'] = glassname
+                glass_df = glass_df.append(glassdict, ignore_index=True)
         return glass_df
                 
 
