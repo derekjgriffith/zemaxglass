@@ -77,6 +77,10 @@ def update_progress(progress, bar_length):
     text = "Progress: [{0}] {1:.1f}%".format( "#" * block + "-" * (bar_length - block), progress * 100)
     print(text)           
 
+# Catalog folders, original and updated to circa Feb 2020
+agfdir = os.path.dirname(os.path.abspath(__file__)) + '/AGF_files/'
+agfdir202002 = os.path.dirname(os.path.abspath(__file__)) + '/AGF_files/202002/'
+
 def zemax_dispersion_formula(wv, dispform, coefficients):
     """
     Calculate material refractive indices according to the various dispersion formulae defined in the Zemax manual.
