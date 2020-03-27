@@ -671,19 +671,24 @@ class ZemaxGlassLibrary(object):
                 'dispform' : form of the dispersion equation. See the Zemax manual.
                 'nd'  : refractive index at the d line
                 'vd'  : standard abbe dispersion number
-                'tce' : thermal coefficient of expansion
+                'tce' : thermal coefficient of expansion (ppm/K)
                 'density' : density in g/cc
                 'dpgf' : catalog relative partial dispersion
                 'status' : glass status
                 'meltfreq' : Melt frequency of the glass
                 'comment' : string comment found in the catalog file
                 'relcost' : relative cost of the glass to N-BK7/S-BSL7
-                'cr' : Various environmental resistance ratings
-                'fr' :
+                'cr' : Various environmental ratings 
+                'fr' : 
                 'sr' :
-                'ar' :
-                'pr' :
-            Other scalar fields that have been added to the glass instance may also work.
+                'ar' : Acid resistance rating
+                'pr' : Phosphate resistance rating
+            Other fields that have been added to the glass instance should also work.
+
+        Returns
+        -------
+        glass_df : pandas DataFrame
+            DataFrame with the requested glass data.
 
         """
         if (catalog == None):
@@ -1027,7 +1032,7 @@ class ZemaxGlassLibrary(object):
         return cat_names, glass_names, rel_partial_dispersion
 
     def get_pair_rank_color_correction(self, wv_centre=wv_d, wv_x=wv_g, wv_y=wv_F, wv_lo=wv_F, wv_hi=wv_C, 
-                                    catalog=None, glass=None):
+                                    catalog=None, glass=None, as_df=False):
         '''
         Get glass pairwise ranks for color correction potential based on generalised Abbe number and relative partial dispersion.
         The ranking is calculated as the difference in generalised Abbe number divided by the difference in generalised
@@ -1038,7 +1043,10 @@ class ZemaxGlassLibrary(object):
         ----------
         wv_centre : float, optional
             The centre wavelength to use for the generalised Abbe number calculation.
-            Default is the yellow Helium d line at 587.5618 nm           
+            Default is the yellow Helium d line at 587.5618 nm.
+            If wv_centre is an array, then all the wavelength inputs must also be arrays of the same length.
+            In this case, the color correction merit is the product of the merit values for the different
+            wavelength regions effectively so specified.           
         wv_x : float, optional
             The numerator lower wavelength to use for the generalised partial dispersion calculation.
             Default is the deep blue Mercury g line at 435.8343 nm
@@ -1056,40 +1064,101 @@ class ZemaxGlassLibrary(object):
             If not provided, all glasses in the catalog(s) will be assumed. 
         catalog : str or list of str, optional
             Catalogs in which to find the specified glass.
-            If not provided, all catalogs will be assumed.       
+            If not provided, all catalogs will be assumed. 
+        as_df : bool
+            If set True, the data will be returned as a pandas DataFrame with columns named as in the Returns.
+            Default False.
+  
 
         Returns
         -------
+        if as_df is False, the following returns are to be expected
         cat1 : list of strings
-            Catalog from which glass1 comes
+            Catalog from which glass1 is taken
         cat2 : list of strings
-            Catalog from which glass 2 comes
-        glass1 : list of strings
+            Catalog from which glass 2 is taken
+        gls1 : list of strings
             First glass in pair, ranked by color correction potential
-        glass2 : list of strings
+        gls2 : list of strings
             Second glass in pair in same rank order as all other outputs
-        rank : ndarray of float
-            Array of color correction potential rank.
+        merit : ndarray of float
+            Array of color correction potential merit. The higher the merit value, the better the potential
+            color correction.
+        
+        If as_df is set True, the above are returned as the columns in a pandas DataFrame.
         '''
-        # Calculate the generalised Abbe numbers
-        cat_names, glass_names, abbe_number = self.get_abbe_number(wv_centre=wv_centre, wv_lo=wv_lo, wv_hi=wv_hi, 
-                                                         catalog=catalog, glass=glass)
-        # Calculate the generalised relative partial dispersion
-        cat_names, glass_names, rel_part_disp = self.get_relative_partial_dispersion(wv_x=wv_x, wv_y=wv_y, wv_lo=wv_lo, wv_hi=wv_hi, 
-                                                         catalog=catalog, glass=glass)
-        # Replicate the matrices up to two dimensions
-        abbe_number, rel_part_disp = np.meshgrid(abbe_number, rel_part_disp)
-        # Calculate the difference in Abbe number divided by the difference in relative partial dispersion
-        rank = np.abs(abbe_number - abbe_number.T) / np.abs(rel_part_disp - rel_part_disp.T)
-        # Set all resulting Nan values to zero
-        rank = np.nan_to_num(rank)
+        wv_centre, wv_x, wv_y = np.atleast_1d(wv_centre), np.atleast_1d(wv_x), np.atleast_1d(wv_y)
+        wv_lo, wv_hi = np.atleast_1d(wv_lo), np.atleast_1d(wv_hi)
+        if wv_centre.size != wv_x.size or wv_centre.size != wv_y.size or wv_centre.size != wv_lo.size or wv_centre.size != wv_hi.size:
+            raise ValueError('Wavelength inputs must all be the same length.')
+        merit = None
+        for i_wv in range(wv_centre.size):
+            # Calculate the generalised Abbe numbers
+            cat_names, glass_names, abbe_number = self.get_abbe_number(wv_centre=wv_centre[i_wv], wv_lo=wv_lo[i_wv], wv_hi=wv_hi[i_wv], 
+                                                            catalog=catalog, glass=glass)
+            # Calculate the generalised relative partial dispersion
+            cat_names, glass_names, rel_part_disp = self.get_relative_partial_dispersion(wv_x=wv_x[i_wv], wv_y=wv_y[i_wv], 
+                                        wv_lo=wv_lo[i_wv], wv_hi=wv_hi[i_wv], catalog=catalog, glass=glass)
+            # Replicate the matrices up to two dimensions
+            abbe_number, rel_part_disp = np.meshgrid(abbe_number, rel_part_disp)
+            # Calculate the difference in Abbe number divided by the difference in relative partial dispersion
+            this_merit = np.abs(abbe_number - abbe_number.T) / np.abs(rel_part_disp - rel_part_disp.T)
+            # Set all resulting Nan values to zero
+            this_merit = np.nan_to_num(this_merit)
+            if merit is None:
+                merit = this_merit
+            else:
+                merit *= this_merit
         cat1, cat2 = np.meshgrid(np.array(cat_names), np.array(cat_names))
         glass1, glass2 = np.meshgrid(np.array(glass_names), np.array(glass_names))
-        rank_order = np.flip(rank.flatten().argsort())[::2]  # Take every second one because they are duplicated
+        rank_order = np.flip(merit.flatten().argsort())[::2]  # Take every second one because they are duplicated
         # The last elements corresponding to the diagonal can also be discarded
-        rank_order = rank_order[:-rank.shape[0]]
-        return cat1.flatten()[rank_order], cat2.flatten()[rank_order], \
-               glass1.flatten()[rank_order], glass2.flatten()[rank_order], rank.flatten()[rank_order]
+        rank_order = rank_order[:-merit.shape[0]]
+        if as_df:  # Return as a dataframe
+            the_data = {'cat1': cat1.flatten()[rank_order], 'gls1': glass1.flatten()[rank_order],
+                        'cat2': cat2.flatten()[rank_order], 'gls2': glass2.flatten()[rank_order],
+                        'merit': merit.flatten()[rank_order]}
+            return pd.DataFrame(data=the_data)
+        else:
+            return cat1.flatten()[rank_order], cat2.flatten()[rank_order], \
+               glass1.flatten()[rank_order], glass2.flatten()[rank_order], merit.flatten()[rank_order]
+
+    def supplement_df(self, pd_df, fields):
+        """
+        Supplement a pandas dataframe with data from the glass catalog.
+        This method will return the pandas dataframe with additional data taken from the glass catalog.
+
+        Parameters
+        ----------
+        pd_df : pandas dataframe
+            Dataframe to be supplemented. Must have at least one column starting with 'cat' and another, corresponding
+            column starting with 'gls'.
+        fields : list of str
+            List of field names to extracted from the glass catalog data
+        """
+        # Get the columns
+        columns = pd_df.keys()
+        for column in columns:
+            if column.startswith('cat'):
+                cat_col = column
+                gls_col = 'gls' + cat_col[3:]
+                cats = pd_df[cat_col]
+                glss = pd_df[gls_col]
+                for field in fields:
+                    # Fetch the requested data from the library
+                    col_dat = []
+                    for i_gls in range(len(glss)):
+                        col_dat.append(self.library[cats[i_gls]][glss[i_gls]][field])
+                    # Add the new column
+                    new_col = field + gls_col[3:]
+                    if new_col in columns:
+                        # Delete column
+                        pd_df = pd_df.drop(columns=new_col)
+                    #print('Length '+new_col+'  '+str(len(col_dat)))
+                    #print(col_dat)
+                    pd_df.insert(loc=len(pd_df.columns), column=new_col, value=col_dat)
+        return pd_df         
+
 
     ## =========================
     def get_polyfit_dispersion(self, glass, catalog):
