@@ -1684,7 +1684,6 @@ def read_library(glassdir, catalog='all'):
 
     glassdir = os.path.normpath(glassdir)
     files = glob.glob(os.path.join(glassdir, '*.[Aa][Gg][Ff]'))
-
     if (len(catalog) > 1) and isinstance(catalog, list):
         catalogs = catalog
     else:
@@ -1696,7 +1695,6 @@ def read_library(glassdir, catalog='all'):
     cat_encoding = {}
 
     for f in files:
-        # print('Reading ' + f + ' ...')
         this_catalog = os.path.basename(f)[:-4].lower()
         if (this_catalog.lower() not in catalogs) and (catalog != 'all'): continue
         (glass_library[this_catalog], cat_comment[this_catalog], 
@@ -1741,7 +1739,6 @@ def parse_glass_file(filename):
     glass_catalog : dict
         The dictionary containing glass data for all glasses in the file.
     '''
-    # print(f'Opening Catalog {filename}')
     # First try to guess the file encoding
     with open(filename, 'rb') as f:  # First open in binary mode
         data = f.read(20)  # Read a scrap of data from the start of the file
