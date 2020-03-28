@@ -1138,7 +1138,12 @@ class ZemaxGlassLibrary(object):
             Dataframe to be supplemented. Must have at least one column starting with 'cat' and another, corresponding
             column starting with 'gls'.
         fields : list of str
-            List of field names to extracted from the glass catalog data
+            List of field names to extracted from the glass catalog data. See method asDataFrame() for some exmples.
+
+        Returns
+        -------
+        pd_df : pandas dataframe
+            Contains input dataframe extended with requested data from the glass library instance (self).
         """
         # Get the columns
         columns = pd_df.keys()
