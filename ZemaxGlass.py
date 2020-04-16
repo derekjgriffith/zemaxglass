@@ -662,6 +662,49 @@ class ZemaxGlassLibrary(object):
         print('')
         return
 
+    def write_agf(self, filename, catalog=None, glasses=None, encoding='latin'):
+        """
+        Write a Zemax .agf format glass catalog file for the specified catalogs and glasses.
+
+        Parameters
+        ----------
+        filename : str
+            Name of the file, with path, in which to write the glass catalog data in .agf format.
+            The extension should be .agf, but this is not enforced.
+        catalog : str or list of str
+            The names of the catalogs in the instance to include in the .agf file to be created.
+        glasses : str or list of str
+            The names of the glasses to include in the new .agf file to be written.
+            If None, all glasses in the given catalogs will be written.
+            If a particular glass name occurs in more than one catalog, both sets of data
+            will be written. It is not known how Zemax will handle multiple glasses with the
+            same name in an .agf file.
+
+        Returns
+        -------
+        success : boolean
+            Returns True if writing the file included at least one glass. False
+            is returned if the writing the file failed or zero glasses were processed.
+        """
+        if (catalog == None):
+            catalogs = self.library.keys()
+        elif (len(catalog) > 1) and isinstance(catalog, list):
+            catalogs = catalog
+        else:
+            catalogs = [catalog]
+        # Make sure glasses is a list, even if a single glass
+        if isinstance(glasses, str):
+            glasses = [glasses]
+        success = False
+        with open(filename, 'wt', encoding=encoding) as agf_file:
+            for catalog in self.library:
+                if (catalog not in catalogs): continue  # Skip the whole catalog
+                for glassname in self.library[catalog]:
+                    if (glasses is None) or (glassname in glasses):  # Write this glass
+                        agf_file.write(self.library[catalog][glassname]['text'])
+                        success = True
+        return success
+
     def asDataFrame(self, fields, catalog=None, glass=None):
         """
         Return selected glass library data as a pandas DataFrame. By default, the catalog and glass name are always 
@@ -688,6 +731,10 @@ class ZemaxGlassLibrary(object):
                 'ar' : Acid resistance rating
                 'pr' : Phosphate resistance rating
             Other fields that have been added to the glass instance should also work.
+        catalog : str or list of str, optional
+            The name of the catalog(s) within the library to process. If not given, all catalogs will be processed.
+        glass : str
+            The name of the glass within the library to process.            
 
         Returns
         -------
@@ -1045,24 +1092,24 @@ class ZemaxGlassLibrary(object):
 
         Parameters
         ----------
-        wv_centre : float, optional
+        wv_centre : scalar float or array of float
             The centre wavelength to use for the generalised Abbe number calculation.
             Default is the yellow Helium d line at 587.5618 nm.
             If wv_centre is an array, then all the wavelength inputs must also be arrays of the same length.
             In this case, the color correction merit is the product of the merit values for the different
             wavelength regions effectively so specified.           
-        wv_x : float, optional
+        wv_x : scalar float or array of float
             The numerator lower wavelength to use for the generalised partial dispersion calculation.
             Default is the deep blue Mercury g line at 435.8343 nm
-        wv_y : float, optional
+        wv_y : scalar float or array of float
             The numerator upper wavelength to use for the generalised partial dispersion calculation.
             Default is the blue Hydrogen F line at 486.1327 nm         
-        wv_lo : float, optional
+        wv_lo : scalar float or array of float
             The denominator lower wavelength to use for the generalised partial dispersion calculation.
-            Default is the red Hydrogen C line at 656.2725 nm
-        wv_hi : float, optional
+            Default is the red Hydrogen F line at 486.1327 nm
+        wv_hi : scalar float or array of float
             The denominator high wavelength to use for the generalised partial dispersion calculation.
-            Default is the blue Hydrogen F line at 486.1327 nm
+            Default is the blue Hydrogen C line at 656.2725 nm
         glass : str or list of str, optional
             Glass(es) for which to calculate the outputs. 
             If not provided, all glasses in the catalog(s) will be assumed. 
@@ -1087,7 +1134,8 @@ class ZemaxGlassLibrary(object):
             Second glass in pair in same rank order as all other outputs
         merit : ndarray of float
             Array of color correction potential merit. The higher the merit value, the better the potential
-            color correction.
+            color correction based on the ratio of the generalised relative partial disperion to 
+            generalised abbe number.
         
         If as_df is set True, the above are returned as the columns in a pandas DataFrame.
         '''
@@ -1126,7 +1174,85 @@ class ZemaxGlassLibrary(object):
         else:
             return cat1.flatten()[rank_order], cat2.flatten()[rank_order], \
                glass1.flatten()[rank_order], glass2.flatten()[rank_order], merit.flatten()[rank_order]
+    
+    def get_pair_rank_index_ratio(self, wv_lo=wv_F, wv_hi=wv_C, n_wv=5,
+                                catalog=None, glass=None, as_df=False):
+        '''
+        Get glass pairwise ranks for color correction potential based on refractive index ratio.
+        The ranking is calculated as the variance of the refractive index ratio computed over a specified
+        wavelength range.
 
+        Parameters
+        ----------
+        wv_lo : scalar float or array of float
+            The lower wavelength limit for computation of the index ratio variance merit.
+            Default is the red Hydrogen F line at 486.1327 nm
+        wv_hi : scalar float or array of float
+            The upper wavelength limit for computation of the index ratio variance merit.
+            Default is the blue Hydrogen C line at 656.2725 nm
+        glass : str or list of str, optional
+            Glass(es) for which to calculate the outputs. 
+            If not provided, all glasses in the catalog(s) will be assumed. 
+        catalog : str or list of str, optional
+            Catalogs in which to find the specified glass.
+            If not provided, all catalogs will be assumed. 
+        as_df : bool
+            If set True, the data will be returned as a pandas DataFrame with columns named as in the Returns.
+            Default False.
+  
+        Returns
+        -------
+        if as_df is False, the following returns are to be expected
+        cat1 : list of strings
+            Catalog from which glass1 is taken
+        cat2 : list of strings
+            Catalog from which glass 2 is taken
+        gls1 : list of strings
+            First glass in pair, ranked by color correction potential
+        gls2 : list of strings
+            Second glass in pair in same rank order as all other outputs
+        merit : ndarray of float
+            Array of color correction potential merit. The higher the merit value, the better the potential
+            color correction based on index ratio variance.
+        
+        If as_df is set True, the above are returned as the columns in a pandas DataFrame.
+        '''
+        wv_lo, wv_hi = np.atleast_1d(wv_lo), np.atleast_1d(wv_hi)
+        if wv_lo.size != wv_hi.size:
+            raise ValueError('Wavelength inputs must all be the same length.')
+        merit = None
+        for i_wv in range(wv_lo.size):
+            wv = np.linspace(wv_lo[i_wv], wv_hi[i_wv], n_wv)
+            # Calculate the indices for all the glasses
+            cat_names, glass_names, indices = self.get_indices(wv=wv, catalog=catalog, glass=glass)
+            # Run through all the glasses and compute ratio variance compared to all other glasses
+            n_glss = len(glass_names)  # Number of glasses
+            ratio_stdev = np.zeros((n_glss, n_glss))
+            # Calculate the ratios only for distinct glass pairs, the diagonal will be zeros
+            for i_gls in range(n_glss):
+                for j_gls in range(n_glss):
+                    if i_gls != j_gls:
+                        ratio_stdev[i_gls, j_gls] = np.std(indices[i_gls, :] / indices[j_gls, :])
+            this_merit = 1.0 / ratio_stdev**2.0  # Zeros will become inf
+            this_merit[np.isinf(this_merit)] = 0.0
+            if merit is None:
+                merit = this_merit
+            else:
+                merit *= this_merit
+        cat1, cat2 = np.meshgrid(np.array(cat_names), np.array(cat_names))
+        glass1, glass2 = np.meshgrid(np.array(glass_names), np.array(glass_names))
+        rank_order = np.flip(merit.flatten().argsort())
+        # The last elements corresponding to the diagonal can also be discarded
+        rank_order = rank_order[:-merit.shape[0]]
+        if as_df:  # Return as a dataframe
+            the_data = {'cat1': cat1.flatten()[rank_order], 'gls1': glass1.flatten()[rank_order],
+                        'cat2': cat2.flatten()[rank_order], 'gls2': glass2.flatten()[rank_order],
+                        'merit': merit.flatten()[rank_order]}
+            return pd.DataFrame(data=the_data)
+        else:
+            return cat1.flatten()[rank_order], cat2.flatten()[rank_order], \
+               glass1.flatten()[rank_order], glass2.flatten()[rank_order], merit.flatten()[rank_order]
+    
     def supplement_df(self, pd_df, fields):
         """
         Supplement a pandas dataframe with data from the glass catalog.
