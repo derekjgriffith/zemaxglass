@@ -17,6 +17,7 @@ except ImportError as e:
     clear_output_possible = False
 import pandas as pd
 import re
+import warnings
 
 
 """
@@ -501,8 +502,10 @@ class ZemaxGlassLibrary(object):
         ----------
         wavemin : float, optional
             The shortest wavelength (nm) in the spectral region of interest.
+            If less than a value of 100 wavemin is assumed to have been given in microns and multiplied by 1000.
         wavemax : float, optional
             The longest wavelength (nm) in the spectral region of interest.
+            If less than a value of 100 wavemax is assumed to have been given in microns and multiplied by 1000.
         nwaves : float, optional
             The number of wavelength samples to use.
         catalog : str
@@ -521,6 +524,12 @@ class ZemaxGlassLibrary(object):
 
         self.debug = debug
         self.degree = degree                    ## the degree of polynomial to use when fitting dispersion data
+        if wavemin < 100.0:  # Probably given in micron units
+            wavemin *= 1000.0
+            warnings.warn('Input wavemin is less than 100. Input units of microns assumed and multiplied by 1000 to get units of nm.')
+        if wavemax < 100.0:  # Probably given in micron units
+            wavemax *= 1000.0
+            warnings.warn('Input wavemax is less than 100. Input units of microns assumed and multiplied by 1000 to get units of nm.')  
         #self.basis = basis                     ## the type of basis to use for polynomial fitting ('Taylor','Legendre')
         self.sampling_domain = sampling_domain  ## the domain ('wavelength' or 'wavenumber') in which to evenly sample the data
 
@@ -1264,7 +1273,7 @@ class ZemaxGlassLibrary(object):
             Dataframe to be supplemented. Must have at least one column starting with 'cat' and another, corresponding
             column starting with 'gls'.
         fields : list of str
-            List of field names to extracted from the glass catalog data. See method asDataFrame() for some exmples.
+            List of field names to extracted from the glass catalog data. See method asDataFrame() for some examples.
 
         Returns
         -------
@@ -1811,15 +1820,14 @@ def read_library(glassdir, catalog='all'):
     glassdir = os.path.normpath(glassdir)
     files = glob.glob(os.path.join(glassdir, '*.[Aa][Gg][Ff]'))
     if (len(catalog) > 1) and isinstance(catalog, list):
-        catalogs = catalog
+        catalogs = [cat_name.lower() for cat_name in catalog] 
     else:
-        catalogs = [catalog]
+        catalogs = [catalog.lower()]
 
     ## Get the set of catalog names. These keys will initialize the glasscat dictionary.
     glass_library = {}
     cat_comment = {}
     cat_encoding = {}
-
     for f in files:
         this_catalog = os.path.basename(f)[:-4].lower()
         if (this_catalog.lower() not in catalogs) and (catalog != 'all'): continue
@@ -1873,7 +1881,6 @@ def parse_glass_file(filename):
         encoding_guess = encoding_guesses[0]
     else:
         encoding_guess = 'latin-1'
-    # print(f'Encoding Guess {encoding_guess}')
     f = open(filename, 'r', encoding=encoding_guess)
     cat_comment = ''  # A comment pertaining to the whole catalog file
     glass_catalog = {}
