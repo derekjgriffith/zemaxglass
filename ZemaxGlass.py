@@ -11,13 +11,18 @@ from cycler import cycler
 import pdb
 from scipy.optimize import curve_fit, least_squares  # e.g. for fitting Buchdahl dispersion functions
 clear_output_possible = True
+import warnings
 try:
     from IPython.display import clear_output
 except ImportError as e:
     clear_output_possible = False
+try:
+    import ref_index
+except ImportError as e:
+    warnings.warn('Some air refractive index computations may use the Python module ref_index. Install with "pip install ref_index".')
 import pandas as pd
 import re
-import warnings
+
 
 
 """
@@ -25,6 +30,8 @@ This file contains a set of utilities for reading Zemax glass (*.agf) files, ana
 properties, and displaying glass data.
 
 See LICENSE.txt for a description of the MIT/X license for this file.
+
+The module has dependencies on numpy, matplotlib, scipy, pandas and the ref_index module.
 """
 
 __authors__ = 'Nathan Hagen, Derek Griffith'
@@ -84,7 +91,7 @@ agfdir202002 = os.path.dirname(os.path.abspath(__file__)) + '/AGF_files/202002/'
 
 def zemax_dispersion_formula(wv, dispform, coefficients):
     """
-    Calculate material refractive indices according to the various dispersion formulae defined in the Zemax manual.
+    Calculate catalog material refractive indices according to the various dispersion formulae defined in the Zemax manual.
     For materials defined in Zemax glass catalogues, the returned indices will be relative to air at standard
     temperature and pressure (20C and 1 atmosphere). The wavelengths are then also assumed to be
     provided in air at the same conditions.
@@ -165,6 +172,104 @@ def zemax_dispersion_formula(wv, dispform, coefficients):
     else:
         raise ValueError('Dispersion formula #' + str(dispform) + ' is not a valid choice.')
     return indices
+
+def air_index_kohlrausch(wv, T, P, rh=50.0):
+    '''
+    Compute the refractive index of air using the Kohlrausch formula.
+
+    Parameters
+    ----------
+    wv : float or array of float
+        Wavelengths. If any wavelength exceeds 100, it is assumed to be in nm.
+        If wavelength is below 100, it is assumed to be in units of microns
+    T : float
+        Temperature in degrees Celcius.
+    P : float
+        Absolute air pressure in Pa. One atmosphere is 101325 Pa = 101.325 kPa.
+        If the pressure is given as zero, refractive indices of 1 are returned for all wavelengths.
+    rh : anything
+        Dummy input - it does nothing.
+
+    Returns
+    -------
+    indices : array of float
+        Air refractive indices for given wavelengths at given temperature and relative pressure.
+    '''
+    w = np.asarray(wv, dtype=np.float)
+    if P==0.0:
+        return np.atleast_1d(np.ones(w.shape))    
+    # If wavelength is above 100.0 assume nm and divide by 1000, otherwise assume microns and no scaling is performed
+    unit_scaling = np.asarray(wv > 100.0, dtype=np.float) / 1000.0 + np.asarray(wv <= 100.0, dtype=np.float)
+    w *= unit_scaling  # Kohlrausch formula needs microns    
+    n_ref = 1.0 + ((6432.8 + ((2949810.0 * w**2) / (146.0 * w**2 - 1.0)) + ((25540.0 * w**2) / (41.0 * w**2 - 1.0))) * 1.0e-8)
+    indices = 1.0 + ((n_ref - 1.0) / (1.0 + (T - 15.0) * 3.4785e-3)) * (P/101325.0)
+    return np.atleast_1d(indices)
+
+def air_index_ciddor(wv, T, P, rh=50.0, co2=450.0, warn=False):
+    '''
+    Compute refractive index of air using the Ciddor equation.
+    This is a thin wrapper around the ref_index.ciddor() function.
+
+    Parameters
+    ----------
+    wv : float or array of float
+        Wavelengths. If any wavelength exceeds 100, it is assumed to be in nm.
+        If wavelength is below 100, it is assumed to be in units of microns
+    T : float
+        Temperature in degrees Celcius.
+    P : float
+        Absolute air pressure in Pa. One atmosphere is 101325 Pa = 101.325 kPa.
+        If the pressure is given as zero, refractive indices of 1 are returned for all wavelengths.        
+    rh : float  
+        Relative humidity in percentage. Default is 50%.
+    co2 : float
+        Carbon dioxide concentration in µmole/mole. The default value
+        of 450 should be enough for most purposes. Valid range is from
+        0 - 2000 µmole/mole.
+    warn : boolean
+        Warning is issued if parameters fall outside accept
+        range. Accepted range is smaller than the valid ranges
+        mentioned above. See module docstring for accepted ranges.
+    '''
+    w = np.asarray(wv, dtype=np.float)
+    if P==0.0:
+        return np.atleast_1d(np.ones(w.shape))     
+    # If wavelength is above 100.0 assume nm, otherwise assume microns and multiply by 1000.0 is performed
+    unit_scaling = np.asarray(wv > 100.0, dtype=np.float) + np.asarray(wv <= 100.0, dtype=np.float) * 1000.0   
+    w *= unit_scaling  # Ciddor function needs wavelength in nanometres
+    indices = ref_index.ciddor(wave=w, t=T, p=P, rh=rh, co2=co2, warn=warn)
+    return np.atleast_1d(indices)
+
+def air_index_edlen(wv, T, P, rh=50.0, warn=False):
+    '''
+    Compute refractive index of air using the Edlen equation.
+    This is a thin wrapper around the ref_index.edlen() function.
+
+    Parameters
+    ----------
+    wv : float or array of float
+        Wavelengths. If any wavelength exceeds 100, it is assumed to be in nm.
+        If wavelength is below 100, it is assumed to be in units of microns
+    T : float
+        Temperature in degrees Celcius.
+    P : float
+        Absolute air pressure in Pa. One atmosphere is 101325 Pa = 101.325 kPa.
+        If the pressure is given as zero, refractive indices of 1 are returned for all wavelengths.        
+    rh : float  
+        Relative humidity in percentage. Default is 50%.
+    warn : boolean
+        Warning is issued if parameters fall outside accept
+        range. Accepted range is smaller than the valid ranges
+        mentioned above. See module docstring for accepted ranges.
+    '''
+    w = np.asarray(wv, dtype=np.float)
+    if P==0.0:
+        return np.atleast_1d(np.ones(w.shape))     
+    # If wavelength is above 100.0 assume nm, otherwise assume microns and multiply by 1000.0 is performed
+    unit_scaling = np.asarray(wv > 100.0, dtype=np.float) + np.asarray(wv <= 100.0, dtype=np.float) * 1000.0   
+    w *= unit_scaling  # Edlen function needs wavelength in nanometres
+    indices = ref_index.edlen(wave=w, t=T, p=P, rh=rh, warn=warn)
+    return np.atleast_1d(indices)
 
 def buchdahl_omega(wv, wv_center, alpha):
     r"""
@@ -494,7 +599,8 @@ class ZemaxGlassLibrary(object):
                     'Sellmeier 5', 'Extended 2', 'Extended 3']
 
     def __init__(self, dir=None, wavemin=400.0, wavemax=700.0, nwaves=300, catalog='all', glass_match=None,
-                sampling_domain='wavelength', degree=3, discard_off_band=False, select_status=None, debug=False):
+                sampling_domain='wavelength', degree=3, discard_off_band=False, select_status=None, 
+                air_index_function='kohl', debug=False):
         '''
         Initialize the glass library object.
 
@@ -528,10 +634,21 @@ class ZemaxGlassLibrary(object):
                 3 : Special
                 4 : Melt
                 Default is all status codes.
+        air_index_function : str
+            The function used to calculate the refractive index of air when changing pressure.
+            One of ['kohl', 'edlen', 'ciddor'] for the Kohlrausch, Edlen and Ciddor equations.
+            The default is 'kohl'.
         '''
 
         self.debug = debug
         self.degree = degree                    ## the degree of polynomial to use when fitting dispersion data
+        # Set up the function to calculate the refractive index of air
+        if air_index_function in ['kohl', 'edlen', 'ciddor']:
+            self.air_index_function = {'kohl': air_index_kohlrausch, 'edlen': air_index_edlen, 
+                                       'ciddor': air_index_ciddor}[air_index_function]
+        else:
+            warnings.warn(f'Unknown air refractive index function {air_index_function}. Kohlrausch assumed.')
+            self.air_index_function = air_index_kohlrausch
         if wavemin < 100.0:  # Probably given in micron units
             wavemin *= 1000.0
             warnings.warn('Input wavemin is less than 100. Input units of microns assumed and multiplied by 1000 to get units of nm.')
@@ -589,8 +706,9 @@ class ZemaxGlassLibrary(object):
             for discarded_cat in cat_discard_list:
                 del self.library[discarded_cat]            
 
-        self.pressure_ref = 1.0113e5   ## the dispersion measurement reference pressure, in Pascals
-        self.temp_ref = 20.0           ## the dispersion measurement reference temperature, in degC
+        self.pressure_ref = 1.0133e5   ## the dispersion measurement default reference pressure (Schott at least), in Pascals
+        self.temp_ref = 20.0           ## the dispersion measurement default reference temperature, in degC
+        self.rh_ref = 50.0             ## default relative humidity
 
         if (sampling_domain == 'wavelength'):
             self.waves = np.linspace(wavemin, wavemax, nwaves)      ## wavelength in nm
@@ -923,13 +1041,10 @@ class ZemaxGlassLibrary(object):
             T_ref = 0.0        ## the dispersion measurement reference temperature in degC
 
         ## Calculating the index of air is a special case, for which we can give a fixed formula.
-        ## This is the formula used in Zemax, but over what wavelength region is this formula valid?
+        ## Watch out for region of wavelength validity. The formula could be Kohlrausch, Ciddor or Edlen
         ## Reference : F. Kohlrausch, Praktische Physik, 1968, Vol 1, page 408
         if (glass.upper() == 'AIR'):
-            T_ref = 20.0
-            P_ref = self.pressure_ref   ## the dispersion measurement reference pressure in Pascals
-            n_ref = 1.0 + ((6432.8 + ((2949810.0 * w**2) / (146.0 * w**2 - 1.0)) + ((25540.0 * w**2) / (41.0 * w**2 - 1.0))) * 1.0e-8)
-            indices = 1.0 + ((n_ref - 1.0) / (1.0 + (T_ref - 15.0) * 3.4785e-3)) * (P / P_ref)
+            indices = self.air_index_function(w, T, P, self.rh_ref)
         if (glass.upper() == 'VACUUM'):
             indices = np.ones_like(w)
 
@@ -937,7 +1052,8 @@ class ZemaxGlassLibrary(object):
             ## use this for AIR and VACUUM
             pass
         else:
-            indices = zemax_dispersion_formula(w, dispform, cd)
+            # Get catalog indices
+            indices_cat = zemax_dispersion_formula(w, dispform, cd)
 
         ## If 'TD' is included in the glass data, then include pressure and temperature dependence of the lens
         ## environment. From Schott's technical report "TIE-19: Temperature Coefficient of the Refractive Index".
@@ -946,8 +1062,14 @@ class ZemaxGlassLibrary(object):
         if ('td' in self.library[catalog][glass]):
             td = self.library[catalog][glass]['td']
             dT = T - T_ref
-            dn = ((indices**2 - 1.0) / (2.0 * indices)) * (td[0] * dT + td[1] * dT**2 + td[2] * dT**3 + ((td[3] * dT + td[4] * dT**2) / (w**2 - td[5]**2)))
-            indices = indices + dn
+            indices_cat_air = self.air_index_function(w, T=T_ref, P=self.pressure_ref, rh=self.rh_ref)
+            indices_abs = indices_cat * indices_cat_air
+            dn_abs = ((indices_abs**2 - 1.0) / (2.0 * indices_abs)) * (td[0] * dT + td[1] * dT**2 + td[2] * dT**3 + ((td[3] * dT + td[4] * dT**2) / (w**2 - td[5]**2)))
+            indices_abs = indices_abs + dn_abs
+            indices_air = self.air_index_function(w, T, P, rh=self.rh_ref)
+            indices = indices_abs / indices_air
+        else:
+            indices = indices_cat
 
         ## Zemax's dispersion formulas all use wavelengths in um. So, to compare "ld" with wavemin and wavemax, we need
         ## to multiply by 1000.
@@ -965,9 +1087,10 @@ class ZemaxGlassLibrary(object):
 
         return(self.waves, indices)
 
-    def get_indices(self, wv=wv_d, catalog=None, glass=None):
+    def get_indices(self, wv=wv_d, catalog=None, glass=None, T=None, P=None, rh=50.0):
         '''
-        Get the refractive indices of a glass for a specified set of wavelngths.
+        Get the catalog refractive indices of a glass for a specified set of wavelengths, 
+        possibly with temperature and pressure corrections.
 
         Parameters
         ----------
@@ -983,6 +1106,13 @@ class ZemaxGlassLibrary(object):
         catalog : str or list of str, optional
             Catalogs in which to find the specified glass.
             If not provided, all catalogs will be assumed.
+        T : float, optional
+            The temperature of the lens environment, in degC. The catalog refractive index is nominally corrected 
+            for a temperature different from the catalog standard temperature.
+        P : float, optional
+            The pressure of the lens environment in Pascals, e.g. air at normal conditions. For vacuum set this value to zero.
+            The catalog refractive index is nominally corrected for air pressure different from the catalog standard pressure.
+            The Schott standard catalogue pressure is 101330 Pa. One standard atmosphere is 101325 Pa.                      
 
         Returns
         -------
@@ -1000,6 +1130,15 @@ class ZemaxGlassLibrary(object):
         catalog_list = []  # This will be compiled per glass and returned
         glass_list = []
         wv = np.asarray(wv, dtype=np.float)
+        # Scale wavelengths to microns
+        unit_scaling = np.asarray(wv > 100.0, dtype=np.float) / 1000.0 + np.asarray(wv <= 100.0, dtype=np.float)
+        wv *= unit_scaling  # Zemax formulae assume microns        
+
+        if T is None:
+            T = self.temp_ref
+        if P is None:
+            P = self.pressure_ref
+
         indices = np.asarray([])
         for this_catalog in self.library:
             if (this_catalog not in catalogs): continue
@@ -1013,15 +1152,74 @@ class ZemaxGlassLibrary(object):
                 if this_glass not in self.library[this_catalog].keys(): continue  # Skip the glass if not in this catalog
                 catalog_list.append(this_catalog)
                 glass_list.append(this_glass)
-                # Calculate the refractive index
-                glass_indices = zemax_dispersion_formula(wv, self.library[this_catalog][this_glass]['dispform'],
+                # Calculate the refractive index (catalog indices in air at catalog reference temperature and air pressure)
+                indices_cat = zemax_dispersion_formula(wv, self.library[this_catalog][this_glass]['dispform'],
                                                              self.library[this_catalog][this_glass]['cd'])
+                # Perform a temperature and pressure correction if temperature or pressure is different from the reference and the data is available
+                if ('td' in self.library[this_catalog][this_glass]):
+                    td = self.library[this_catalog][this_glass]['td']
+                    T_ref = td[6]  # Fetch the catalogue reference temperature for this glass usually 20 C
+                    dT = T - T_ref  # difference between catalog reference temperature and requested environmental temperature
+                    # Compute the index of air for reference catalog conditions
+                    indices_cat_air = self.air_index_function(wv, T=T_ref, P=self.pressure_ref, rh=self.rh_ref)
+                    # Compute the absolute glass indices (always higher relative to vacuum)
+                    indices_abs = indices_cat * indices_cat_air
+                    # Compute the change in absolute refractive index
+                    dn_abs = ((indices_abs**2 - 1.0) / (2.0 * indices_abs)) * (td[0] * dT + td[1] * dT**2 + td[2] * dT**3 + ((td[3] * dT + td[4] * dT**2) / (wv**2 - td[5]**2)))
+                    indices_abs = indices_abs + dn_abs
+                    # Compute the environmental air indices
+                    indices_env_air = self.air_index_function(wv, T, P, rh)
+                    # Finally, compute the glass indices at the requested environmental conditions
+                    glass_indices = indices_abs / indices_env_air
+                else: # Just return the catalog indices corrected for pressure
+                    # Compute indices for air at standard catalog environmental conditions
+                    indices_cat_air = self.air_index_function(wv, T=self.pressure_ref, P=self.pressure_ref, rh=self.rh_ref)
+                    # Compute air indices for requested environment
+                    indices_env_air = self.air_index_function(wv, T, P, rh)
+                    # Correct catalog indices for difference in catalog and environmental conditions
+                    glass_indices = indices_cat * indices_cat_air / indices_env_air
                 if indices.size > 0:
                     indices = np.vstack((indices, glass_indices))
                 else:
-                    indices = glass_indices
+                    indices = np.atleast_1d(glass_indices)
         
         return catalog_list, glass_list, indices
+
+    def add_opto_thermal_coeff(self, temp_lo, temp_hi, wv_ref=wv_d):
+        '''
+        Compute the opto-thermal coefficients for all glasses in the library for a particular temperature range.
+        The glass must have TD temperature data for the opto-thermal coefficient to be valid, as well as a
+        valid coefficient of thermal expansion.
+
+        The coefficient is added to the glass data as the dictionary value 'opto_therm_coeff'. Units are per Kelvin.
+        The dn/DT (thermal coefficient of refractive index) is also added as the dictionary value 'dndT'.
+
+        Parameters
+        ----------
+        temp_lo : float
+            Low temperature for calculation of opto-thermal coefficents in degrees C.
+        temp_hi : float
+            High temperature for calculation of opto-thermal coefficients in degrees C.
+        wv_ref : float
+            Reference (centre) wavelength at which to compute the opto-thermal coefficients. 
+            If any wavelength is greater than 100 it is assumed that units are nm.            
+        '''
+        self.temp_lo = temp_lo
+        self.temp_hi = temp_hi
+        # Compute refractive indices at the low temperature
+        cat_list, gls_list, ind_lo = self.get_indices(wv_ref, T=temp_lo)
+        # Compute refractive indices at the reference temperature
+        cat_list, gls_list, ind_ref = self.get_indices(wv_ref)
+        # Compute refractive indices at the high temperature
+        cat_list, gls_list, ind_hi = self.get_indices(wv_ref, T=temp_hi)
+        # Compute an array of dn/dT using low and high temperature indices
+        dndT = (ind_hi - ind_lo) / (temp_hi - temp_lo)
+        # Compute opto-thermal coefficients and insert into database
+        for i_gls in range(len(gls_list)):
+            opto_therm_coeff = dndT[i_gls] / (ind_ref[i_gls] - 1.0) - self.library[cat_list[i_gls]][gls_list[i_gls]]['tce']/1.0e6
+            self.library[cat_list[i_gls]][gls_list[i_gls]]['opto_therm_coeff'] = float(opto_therm_coeff)
+            self.library[cat_list[i_gls]][gls_list[i_gls]]['dndT'] = float(dndT[i_gls])
+            self.library[cat_list[i_gls]][gls_list[i_gls]]['n_ref'] = float(ind_ref[i_gls])
 
     def get_abbe_number(self, wv_centre=wv_d, wv_lo=wv_F, wv_hi=wv_C, catalog=None, glass=None):
         '''
