@@ -494,7 +494,7 @@ class ZemaxGlassLibrary(object):
                     'Sellmeier 5', 'Extended 2', 'Extended 3']
 
     def __init__(self, dir=None, wavemin=400.0, wavemax=700.0, nwaves=300, catalog='all', glass_match=None,
-                sampling_domain='wavelength', degree=3, discard_off_band=False, debug=False):
+                sampling_domain='wavelength', degree=3, discard_off_band=False, select_status=None, debug=False):
         '''
         Initialize the glass library object.
 
@@ -520,6 +520,14 @@ class ZemaxGlassLibrary(object):
         discard_off_band : boolean
             If set True, will discard glasses where the valid spectral range does not fully cover
             the interval wavemin to wavemax.
+        select_status : list of int
+            Select glasses based on status. One or more of the following status codes:
+                0 : Standard
+                1 : Preferred
+                2 : Obsolete
+                3 : Special
+                4 : Melt
+                Default is all status codes.
         '''
 
         self.debug = debug
@@ -567,6 +575,10 @@ class ZemaxGlassLibrary(object):
                     if not re.match(glass_match, glass):
                         # print(f'Discarding {catalogue.capitalize()} {glass} RE mismatch')
                         discard_list.append(glass)
+                    # Discard glasses based on status
+                    if select_status:
+                        if (self.library[catalogue][glass]['status'] not in select_status) and (glass not in discard_list):
+                            discard_list.append(glass)
                 # Ditch the discarded glasses
                 for discarded_glass in discard_list:
                     del self.library[catalogue][discarded_glass]
@@ -714,7 +726,7 @@ class ZemaxGlassLibrary(object):
                         success = True
         return success
 
-    def asDataFrame(self, fields, catalog=None, glass=None):
+    def asDataFrame(self, fields=['nd', 'vd'], catalog=None, glass=None):
         """
         Return selected glass library data as a pandas DataFrame. By default, the catalog and glass name are always 
         returned under the fields 'cat' and 'gls'.
@@ -731,6 +743,7 @@ class ZemaxGlassLibrary(object):
                 'density' : density in g/cc
                 'dpgf' : catalog relative partial dispersion
                 'status' : glass status
+                'stat_txt' : glass status as a string 'Standard', 'Preferred, 'Obsolete', 'Special' or 'Melt'
                 'meltfreq' : Melt frequency of the glass
                 'comment' : string comment found in the catalog file
                 'relcost' : relative cost of the glass to N-BK7/S-BSL7
@@ -740,6 +753,7 @@ class ZemaxGlassLibrary(object):
                 'ar' : Acid resistance rating
                 'pr' : Phosphate resistance rating
             Other fields that have been added to the glass instance should also work.
+            Default is ['nd', 'vd'] i.e. refractive index at d-line (587.5618 nm) and standard abbe dispersion number.
         catalog : str or list of str, optional
             The name of the catalog(s) within the library to process. If not given, all catalogs will be processed.
         glass : str
@@ -1901,7 +1915,10 @@ def parse_glass_file(filename):
             glass_catalog[glassname]['nd'] = float(nm[4])
             glass_catalog[glassname]['vd'] = float(nm[5])
             glass_catalog[glassname]['exclude_sub'] = 0 if (len(nm) < 7) else int(float(nm[6]))
-            glass_catalog[glassname]['status'] = 0 if (len(nm) < 8) else int(float(nm[7]))
+            glass_catalog[glassname]['status'] = 5 if (len(nm) < 8) else int(float(nm[7]))
+            status = glass_catalog[glassname]['status']
+            if status < 0 or status > 5: status = 5  # Unknown status
+            glass_catalog[glassname]['stat_txt'] = ['Standard', 'Preferred', 'Obsolete', 'Special', 'Melt', 'Unknown'][glass_catalog[glassname]['status']]
             glass_catalog[glassname]['meltfreq'] = 0 if ((len(nm) < 9) or (nm.count('-') > 0)) else int(float(nm[8]))
         elif line.startswith('GC '):  # Individual glass comment
             glass_catalog[glassname]['comment'] = line[2:].strip() 
