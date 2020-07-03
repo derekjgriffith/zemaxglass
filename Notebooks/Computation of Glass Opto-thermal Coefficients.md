@@ -19,7 +19,7 @@ The opto-thermal coefficient of a glass material quantifies the amount by which 
 
 Optical system comprising multiple lenses in multiple materials can be brought closer to athermalisation by choosing materials with opto-thermal coefficients that tend to bring the sum of the temperature-induced changes closer to zero. This is made easier by the fact that some materials have negative opto-thermal coeffients and some have positive coefficients.
 
-This notebook computes a table of opto-thermal coefficients for catalogue glasses where the relevant information (as required by the formulae and procedures presented below) is provided by the manufacturer. Glasses from Schott, Ohara and [CDGM](http://www.cdgm.eu/CDGM/CDGM.html) are included in the tables.
+This notebook computes a table of opto-thermal coefficients for catalogue glasses where the relevant information (as required by the formulae and procedures presented below) is provided by the manufacturer. Glasses from [Schott](https://www.schott.com/english/index.html), [Ohara](https://www.ohara-gmbh.com/en/ohara.html) and [CDGM](http://www.cdgm.eu/CDGM/CDGM.html) are included in the tables.
 
 
 # Formulae and Procedure
@@ -83,11 +83,15 @@ pd.set_option('display.max_rows', 1000)
 latex_flag = True  # Set this True when downloading .tex for reporting purposes
 # Choose wavelength and temperature ranges
 wv_lo = 450.0  # nm
-wv_hi = 850.0  # nm
+wv_hi = 850.0  # nm, 
+wv_ref = 587.6 # nm, Reference wavelength 
 temp_lo = -10.0  # deg C
 temp_hi = 40.0  # deg C
-display(Latex(f'Opto-thermal coefficients computed for temperature range {temp_lo}$^\circ$C to {temp_hi}$^\circ$C'))
-display(Latex(f'Reference wavelength is Sodium d-line at 586.9 nm'))
+# The environmental pressure for calculation of the opto-thermal coefficients
+press_env = 101330.0  # Pa, Environmental pressure (Schott catalogue reference pressure is 101330.0)
+display(Latex(f'Opto-thermal coefficients computed for temperature range {temp_lo}$^\circ$C to {temp_hi}$^\circ$C.'))
+display(Latex(f'Reference wavelength is Sodium d-line at 586.9 nm.'))
+display(Latex(f'Environmental pressure is {press_env} Pa.'))
 ```
 
 ```python
@@ -99,12 +103,10 @@ ohara = ZemaxGlass.ZemaxGlassLibrary(ZemaxGlass.agfdir,
                                      wavemin=wv_lo, wavemax=wv_hi, degree=10, select_status=[0, 1])
 print(ohara.library.keys())
 # Compute opto-thermal coefficients
-ohara.add_opto_thermal_coeff(temp_lo=temp_lo, temp_hi=temp_hi)
+ohara.add_opto_thermal_coeff(temp_lo=temp_lo, temp_hi=temp_hi, wv_ref=wv_ref, pressure_env=press_env)
 ```
 
 ```python
-def gls_name_formatter(gls):
-    return 
 def dndT_formatter(dndT):
     return '%1.3f' % (dndT * 1.0e6)
 def opto_therm_coeff_formatter(gamma):
@@ -150,7 +152,7 @@ schott = ZemaxGlass.ZemaxGlassLibrary(ZemaxGlass.agfdir,
                                      catalog=schott_catalog, glass_match='N-',
                                      wavemin=wv_lo, wavemax=wv_hi, degree=10, select_status=[0, 1])
 print(schott.library.keys())
-schott.add_opto_thermal_coeff(temp_lo=temp_lo, temp_hi=temp_hi)
+schott.add_opto_thermal_coeff(temp_lo=temp_lo, temp_hi=temp_hi, wv_ref=wv_ref, pressure_env=press_env)
 ```
 
 ```python
@@ -189,7 +191,7 @@ else:
 schott_sil = ZemaxGlass.ZemaxGlassLibrary(ZemaxGlass.agfdir, 
                                      catalog=schott_catalog, glass_match='LITHOSIL',
                                      wavemin=wv_lo, wavemax=wv_hi, degree=10)
-schott_sil.add_opto_thermal_coeff(temp_lo=temp_lo, temp_hi=temp_hi)
+schott_sil.add_opto_thermal_coeff(temp_lo=temp_lo, temp_hi=temp_hi, wv_ref=wv_ref, pressure_env=press_env)
 ```
 
 ```python
@@ -227,7 +229,7 @@ cdgm = ZemaxGlass.ZemaxGlassLibrary(ZemaxGlass.agfdir, glass_match='H-',
                                      catalog=cdgm_catalog,
                                      wavemin=wv_lo, wavemax=wv_hi, degree=10, select_status=[0, 1])
 print(cdgm.library.keys())
-cdgm.add_opto_thermal_coeff(temp_lo=temp_lo, temp_hi=temp_hi)
+cdgm.add_opto_thermal_coeff(temp_lo=temp_lo, temp_hi=temp_hi, wv_ref=wv_ref, pressure_env=press_env)
 ```
 
 ```python
