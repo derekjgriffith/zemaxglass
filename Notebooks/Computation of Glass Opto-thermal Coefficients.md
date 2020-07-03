@@ -61,6 +61,22 @@ where $T$ is the temperature in Celsius, $P$ is the relative air pressure (dimen
 
 While not really relevant to the spectral region considered here, the Kohlrausch formula for the refractive index of air may only be valid within a restricted wavelength region. Alternative formulas for the refractive index of air include the Edlén and Ciddor equations. These can be computed using the [ref_index](https://pypi.org/project/ref_index/) package. NIST indicates that the [Edlén](https://emtoolbox.nist.gov/Wavelength/Edlen.asp) and [Ciddor](https://emtoolbox.nist.gov/Wavelength/Ciddor.asp) equations are valid over the spectral range 300 nm to 1700 nm. 
 
+## Lens System Athermalisation
+The following table shows the sign relationships dictated by the above relationship between temperature change $\Delta T$ focal length $f$, opto-thermal coefficient $\gamma$ and the change in focal length $\Delta f$.  
+
+| $\Delta T$ | $f$ | $\gamma$ | $\Delta f$ |
+|------------|-----|----------|------------|
+|      +     |  +  |     +    |      -     |
+|      +     |  +  |     -    |      +     |
+|      +     |  -  |     +    |      +     |
+|      +     |  -  |     -    |      -     |
+|      -     |  +  |     +    |      +     |
+|      -     |  +  |     -    |      -     |
+|      -     |  -  |     +    |      -     |
+|      -     |  -  |     -    |      +     |
+
+Suppose an existing multi-element optical design has been found that has an increase in focal length with temperature. This is associated with negative $\gamma$ at positive lens elements and/or positive $\gamma$ at negative lens elements. The increase in focal length can therefore be mitigated by finding a glass with a higher $\gamma$ at positive lens elements and/or finding a glass with a lower $\gamma$ at negative lens elements. This represents the most basic approach to athermalisation. Since large perturbations to the lens are undesirable, the incremental approach is to find a substitute glass that has very similar refractive index and abbe number to the existing one. Table 8 below can be used to find nearby glasses with the desired shift direction in $\gamma$.
+
 <!-- #endregion -->
 
 ```python
