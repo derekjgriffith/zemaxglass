@@ -2,3 +2,10 @@
 Notebooks/.ipynb_checkpoints/
 *.ipynb
 ZemaxGlass.egg-info/
+*.bak
+*.aux
+*.bbl
+*.blg
+*.log
+*.out
+*.gz
