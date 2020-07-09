@@ -1185,7 +1185,7 @@ class ZemaxGlassLibrary(object):
         
         return catalog_list, glass_list, indices
 
-    def add_opto_thermal_coeff(self, temp_lo, temp_hi, wv_ref=wv_d):
+    def add_opto_thermal_coeff(self, temp_lo, temp_hi, wv_ref=wv_d, pressure_env=101330.0):
         '''
         Compute the opto-thermal coefficients for all glasses in the library for a particular temperature range.
         The glass must have TD temperature data for the opto-thermal coefficient to be valid, as well as a
@@ -1202,16 +1202,22 @@ class ZemaxGlassLibrary(object):
             High temperature for calculation of opto-thermal coefficients in degrees C.
         wv_ref : float
             Reference (centre) wavelength at which to compute the opto-thermal coefficients. 
-            If any wavelength is greater than 100 it is assumed that units are nm.            
+            If any wavelength is greater than 100 it is assumed that units are nm.
+        pressure_env : float
+            Air pressure for calculation of opto-thermal constants.
+            Default is 101330 Pa, the Schott catalog reference.
+            To calculate absolute opto-thermal coefficents, set pressure_env=0.0 (vacuum).            
         '''
         self.temp_lo = temp_lo
         self.temp_hi = temp_hi
+        self.wv_ref = wv_ref
+        self.press_env = pressure_env
         # Compute refractive indices at the low temperature
-        cat_list, gls_list, ind_lo = self.get_indices(wv_ref, T=temp_lo)
+        cat_list, gls_list, ind_lo = self.get_indices(wv_ref, T=temp_lo, P=pressure_env)
         # Compute refractive indices at the reference temperature
-        cat_list, gls_list, ind_ref = self.get_indices(wv_ref)
+        cat_list, gls_list, ind_ref = self.get_indices(wv_ref, P=pressure_env)
         # Compute refractive indices at the high temperature
-        cat_list, gls_list, ind_hi = self.get_indices(wv_ref, T=temp_hi)
+        cat_list, gls_list, ind_hi = self.get_indices(wv_ref, T=temp_hi, P=pressure_env)
         # Compute an array of dn/dT using low and high temperature indices
         dndT = (ind_hi - ind_lo) / (temp_hi - temp_lo)
         # Compute opto-thermal coefficients and insert into database
