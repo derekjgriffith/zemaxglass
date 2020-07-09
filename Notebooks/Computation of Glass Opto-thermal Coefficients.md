@@ -23,11 +23,16 @@ This notebook computes a table of opto-thermal coefficients for catalogue glasse
 
 
 # Formulae and Procedure
-The opto-thermal coefficient of a glass material is defined (Reshidko 2013) as
-$$\gamma = \frac{\frac{\mathrm{d}n}{\mathrm{d}T}}{n-1}-\alpha, $$
+The opto-thermal coefficient of a glass material is defined \cite{Reshidko2013} as
+$$
+\gamma = \frac{\frac{\mathrm{d}n}{\mathrm{d}T}}{n-1}-\alpha,
+$$
 where $\frac{\mathrm{d}n}{\mathrm{d}T}$ is the thermal coefficient of refractive index (units $K^{-1}$), $n$ is the nominal refractive index (at some reference wavelength, temperature and pressure) and $\alpha$ is the linear coefficient of thermal expansion (CTE) of the glass (in $m/m/K$ which is just $K^{-1}$).
 The change in focal length $\Delta f$ of a lens of nominal focal length $f$ is related to the opto-thermal coefficient as
-$$\frac{\Delta f}{f} = -\gamma \cdot \Delta T.$$
+\begin{equation}
+\frac{\Delta f}{f} = -\gamma \cdot \Delta T.
+\label{eq:focal_length_gamma}
+\end{equation}
 
 The computation is performed using a model for the change in refractive index (from nominal) for the change in temperature $\Delta T$. The absolute change in refractive index is
 $$\Delta n_{abs} = \frac{n^2-1}{2n}\left[ D_0 \Delta T + D_1 \Delta T^2 + D_2 \Delta T^3 + \frac{E_0 \Delta T + E_1 \Delta T^2}{\lambda^2 - \lambda^2_{tk}}\right],$$
@@ -51,7 +56,7 @@ The procedure used in Zemax to compute the relative refractive index of a glass 
 6. Compute the index of air at the system temperature and pressure, again using the Kohlrausch formula given below.
 7. Compute the index of the glass relative to the air at the system temperature and pressure by dividing by the index of air computed in the previous step.
 
-The refractive index of air is computed (F. Kohlrausch, Praktische Physik, 1968, Vol 1, page 408) as
+The refractive index of air is computed \cite{Kohlrausch1968} as
 $$n_{air}=1+\frac{\left( n_{ref}-1\right)P}{1+(T-15)\cdot(3.4785\times10^{-3})},$$
 where
 $$n_{ref} = 1+\left[ 6432.8+\frac{2949810 \lambda^2}{146\lambda^2 - 1} + \frac{25540\lambda^2}{41\lambda^2-1} \right] \cdot 1.0\times10^{-8},$$
@@ -62,7 +67,7 @@ where $T$ is the temperature in Celsius, $P$ is the relative air pressure (dimen
 While not really relevant to the spectral region considered here, the Kohlrausch formula for the refractive index of air may only be valid within a restricted wavelength region. Alternative formulas for the refractive index of air include the Edlén and Ciddor equations. These can be computed using the [ref_index](https://pypi.org/project/ref_index/) package. NIST indicates that the [Edlén](https://emtoolbox.nist.gov/Wavelength/Edlen.asp) and [Ciddor](https://emtoolbox.nist.gov/Wavelength/Ciddor.asp) equations are valid over the spectral range 300 nm to 1700 nm. 
 
 ## Lens System Athermalisation
-The following table shows the sign relationships dictated by the above relationship between temperature change $\Delta T$ focal length $f$, opto-thermal coefficient $\gamma$ and the change in focal length $\Delta f$.  
+The following table shows the sign relationships dictated by Eq. \ref{eq:focal_length_gamma}. 
 
 | $\Delta T$ | $f$ | $\gamma$ | $\Delta f$ |
 |------------|-----|----------|------------|
@@ -75,7 +80,12 @@ The following table shows the sign relationships dictated by the above relations
 |      -     |  -  |     +    |      -     |
 |      -     |  -  |     -    |      +     |
 
-Suppose an existing multi-element optical design has been found that has an increase in focal length with temperature. This is associated with negative $\gamma$ at positive lens elements and/or positive $\gamma$ at negative lens elements. The increase in focal length can therefore be mitigated by finding a glass with a higher $\gamma$ at positive lens elements and/or finding a glass with a lower $\gamma$ at negative lens elements. This represents the most basic approach to athermalisation. Since large perturbations to the lens are undesirable, the incremental approach is to find a substitute glass that has very similar refractive index and abbe number to the existing one. Table 8 below can be used to find nearby glasses with the desired shift direction in $\gamma$.
+
+Suppose an existing multi-element optical design has been found that has an increase in focal length with temperature ($\Delta T$ positive and $\Delta f$ positive). This is associated with negative $\gamma$ at positive lens elements and/or positive $\gamma$ at negative lens elements. The increase in focal length can therefore be mitigated by finding a glass with a higher $\gamma$ at positive lens elements and/or finding a glass with a lower $\gamma$ at negative lens elements. This represents the most basic approach to athermalisation. 
+
+Since large perturbations to the existing lens design are usually undesirable, the incremental approach is to find a substitute glass that has very similar refractive index $n_d$ and abbe number $\nu_d$ to the existing one. Table 8 below can be used to find nearby glasses with the desired shift direction in $\gamma$.
+
+Use of only $n_d$ and $\nu_d$ to find alternative glasses is quite a primitive approach, especially for systems with very refined color aberration correction. An improved selection process takes the relative partial dispersion into account.  
 
 <!-- #endregion -->
 
@@ -174,7 +184,7 @@ schott.add_opto_thermal_coeff(temp_lo=temp_lo, temp_hi=temp_hi, wv_ref=wv_ref, p
 ```python
 # Create a pandas dataframe 
 schott_df = schott.asDataFrame(fields=['nd', 'vd', 'dndT', 'opto_therm_coeff']).sort_values(['nd', 'vd'], ascending=[1, 0])
-# Replace catalog name with just Ohara
+# Replace catalog name with just Schott
 schott_df.replace(to_replace=schott_catalog, value='Schott', inplace=True)
 if latex_flag:
     display(Latex('\\clearpage\\begin{center}Table 3. Schott Opto-thermal Coefficients Sorted by Refractive Index'
@@ -203,7 +213,6 @@ else:
 
 ```python
 # Read Schott LITHOSIL-Q
-# Read the Schott catalog, only N- type glasses that are standard or preferred
 schott_sil = ZemaxGlass.ZemaxGlassLibrary(ZemaxGlass.agfdir, 
                                      catalog=schott_catalog, glass_match='LITHOSIL',
                                      wavemin=wv_lo, wavemax=wv_hi, degree=10)
@@ -251,7 +260,7 @@ cdgm.add_opto_thermal_coeff(temp_lo=temp_lo, temp_hi=temp_hi, wv_ref=wv_ref, pre
 ```python
 # Create a pandas dataframe 
 cdgm_df = cdgm.asDataFrame(fields=['nd', 'vd', 'dndT', 'opto_therm_coeff']).sort_values(['nd', 'vd'], ascending=[1, 0])
-# Replace catalog name with just Ohara
+# Replace catalog name with just CDGM
 cdgm_df.replace(to_replace=cdgm_catalog, value='CDGM', inplace=True)
 if latex_flag:
     display(Latex('\\clearpage\\begin{center}Table 6. CDGM Opto-thermal Coefficients Sorted by Refractive Index'
@@ -296,21 +305,19 @@ if latex_flag:
                   '\end{center}\\clearpage'))
 ```
 
-<!-- #region -->
 # References
 
-<dt>1. Technical Information <a href='https://www.schott.com/d/advanced_optics/3794eded-edd2-461d-aec5-0a1d2dc9c523/1.1/schott_tie-19_temperature_coefficient_of_refractive_index_eng.pdf/1.5/schott_tie-32_thermal_loads_on_optical_glass_us.pdf' name="SchottTIE19">(Schott TIE19)</a></dt>
-<dd>Schott Advanced Optics</dd>
-<dd><i>TIE-19 Temperature Coefficient of the Refractive Index</i></dd>
-<dd>Schott Inc., <b>2016</b></dd>
+[<a id="cit-Reshidko2013" href="#call-Reshidko2013">1</a>] D. Reshidko and J. Sasián, ``_Method of calculation and tables of optothermal coefficients and thermal diffusivities for glass_'', Optical System Alignment, Tolerancing, and Verification VII,  2013.  [online](https://doi.org/10.1117/12.2036112)
+
+[<a id="cit-Kohlrausch1968" href="#call-Kohlrausch1968">2</a>] F. Kohlrausch, ``_Praktische Physik_'',  1968.
 
 
-<dt>2. Proceedings of SPIE <a href='https://doi.org/10.1117/12.2036112' name="Reshidko2013">(Reshidko 2013)</a></dt>
-<dd>Reshidko, D. and Sasián, J.</dd>
-<dd><i>Method of calculation and tables of optothermal coefficients and thermal diffusivities for glass</i></dd>
-<dd>Sasián, J. &amp; Youngworth, R. N. <i>(ed.)</i></dd>
-<dd>Optical System Alignment, Tolerancing, and Verification VII</dd>
-<dd>SPIE, <b>2013</b>, Vol. 8844, pp. 52 - 62</dd>
 
-
-<!-- #endregion -->
+<!-- #raw -->
+% The raw latex commands in this cell will generate a second reference section, which will work if this
+% notebook is downloaded as .tex and compiled as usual (pdflatex, bibtex, pdflatex, pdflatex).
+% Some editing of the .tex file will be necessary to remove the first reference section or deal with
+% other possible minor issues.
+\bibliographystyle{unsrt}
+\bibliography{biblio}
+<!-- #endraw -->
