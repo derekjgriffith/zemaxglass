@@ -305,6 +305,55 @@ if latex_flag:
                   '\end{center}\\clearpage'))
 ```
 
+```python
+# As an option, add the Sumita and Nikon-Hikari catalogues. The availability of these glasses is less certain
+# than for Ohara, CDGM and Sumita.
+# Read the Sumita catalog, only K- type glasses that are standard or preferred
+sumita_catalog = 'sumita_20200616'
+sumita = ZemaxGlass.ZemaxGlassLibrary(ZemaxGlass.agfdir, 
+                                     catalog=sumita_catalog, glass_match='K-',
+                                     wavemin=wv_lo, wavemax=wv_hi, degree=10, select_status=[0, 1])
+print(sumita.library.keys())
+sumita.add_opto_thermal_coeff(temp_lo=temp_lo, temp_hi=temp_hi, wv_ref=wv_ref, pressure_env=press_env)
+# Create a pandas dataframe 
+sumita_df = sumita.asDataFrame(fields=['nd', 'vd', 'dndT', 'opto_therm_coeff']).sort_values(['nd', 'vd'], ascending=[1, 0])
+# Replace catalog name with just Sumita
+sumita_df.replace(to_replace=sumita_catalog, value='Sumita', inplace=True)
+# Append the Sumita catalog to the large dataframe
+allgls_df = allgls_df.merge(sumita_df, how='outer').sort_values(by=['nd', 'vd'], ascending=[1, 0])
+```
+
+```python
+# Read the Nikon Hikari catalog, only glasses that are standard or preferred
+hikari_catalog = 'nikon-hikari_201911'
+hikari = ZemaxGlass.ZemaxGlassLibrary(ZemaxGlass.agfdir, 
+                                     catalog=hikari_catalog,
+                                     wavemin=wv_lo, wavemax=wv_hi, degree=10, select_status=[0, 1])
+print(hikari.library.keys())
+hikari.add_opto_thermal_coeff(temp_lo=temp_lo, temp_hi=temp_hi, wv_ref=wv_ref, pressure_env=press_env)
+# Create a pandas dataframe for the Nikon-Hikari catalogue
+hikari_df = hikari.asDataFrame(fields=['nd', 'vd', 'dndT', 'opto_therm_coeff']).sort_values(['nd', 'vd'], ascending=[1, 0])
+# Replace catalog name with just Hikari
+hikari_df.replace(to_replace=hikari_catalog, value='Hikari', inplace=True)
+# Append the hikari catalog to the large dataframe
+allgls_df = allgls_df.merge(hikari_df, how='outer').sort_values(by=['nd', 'vd'], ascending=[1, 0])
+```
+
+```python
+if latex_flag:
+    display(Latex('\\clearpage\\begin{center}Table 9. Schott, Ohara, CDGM, Sumita and Hikari Opto-thermal Coefficients Sorted by $n_d$'
+                  f' ({temp_lo}$^\circ$C to {temp_hi}$^\circ$C)\end{{center}}'))
+    display(Latex(allgls_df.to_latex(index=False, longtable=True, escape=False,
+                                   header=['Manufacturer', 'Glass','$n_d$', '$\\nu_d$', 
+                                           '$dn/dT [1/K]\\times10^{-6}$', 
+                                           '$\\gamma$ $[1/K]\\times10^{-6}$'],
+                                   formatters={'nd': n_d_formatter, 'vd': nu_d_formatter,
+                                               'dndT': dndT_formatter, 
+                                               'opto_therm_coeff': opto_therm_coeff_formatter,})))
+    display(Latex('\\begin{center}\\guillemotleft\\guillemotright'
+                  '\end{center}\\clearpage'))
+```
+
 # References
 
 [<a id="cit-Reshidko2013" href="#call-Reshidko2013">1</a>] D. Reshidko and J. Sasián, ``_Method of calculation and tables of optothermal coefficients and thermal diffusivities for glass_'', Optical System Alignment, Tolerancing, and Verification VII,  2013.  [online](https://doi.org/10.1117/12.2036112)
