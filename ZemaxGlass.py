@@ -89,6 +89,9 @@ def update_progress(progress, bar_length):
 agfdir = os.path.dirname(os.path.abspath(__file__)) + '/AGF_files/'
 agfdir202002 = os.path.dirname(os.path.abspath(__file__)) + '/AGF_files/202002/'
 
+# Number of coefficients for vairous Zemax dispersion relation formulae 
+num_coeff = [6, 6, 7, 5, 3, 8, 4, 4, 5, 8, 10, 8, 9]
+
 def zemax_dispersion_formula(wv, dispform, coefficients):
     """
     Calculate catalog material refractive indices according to the various dispersion formulae defined in the Zemax manual.
@@ -104,19 +107,19 @@ def zemax_dispersion_formula(wv, dispform, coefficients):
     dispform : int
         The index of the formula in the order provided in the Zemax manual and as defined in the .agf file format.
         Range is 1 to 13. ValueError is thrown if not one of these.
-        1 : Schott
-        2 : Sellmeier 1
-        3 : Herzberger
-        4 : Sellmeier 2
-        5 : Conrady
-        6 : Sellmeier 3
-        7 : Handbook of Optics 1
-        8 : Handbook of Optics 2
-        9 : Sellmeier 4
-        10: Extended 1
-        11: Sellmeier 5
-        12: Extended 2
-        13: Extended 3
+        1 : Schott with 6 coefficients
+        2 : Sellmeier 1 with 6 coefficients
+        3 : Herzberger with 7 coefficients
+        4 : Sellmeier 2 with 5 coefficients
+        5 : Conrady with 3 coefficients
+        6 : Sellmeier 3 with 8 coefficients
+        7 : Handbook of Optics 1 with 4 coefficients
+        8 : Handbook of Optics 2 with 4 coefficients
+        9 : Sellmeier 4 with 5 coefficients
+        10: Extended 1 with 8 coefficients
+        11: Sellmeier 5 with 10 coefficients
+        12: Extended 2 with 8 coefficients
+        13: Extended 3 with 9 coefficients
     coefficients : list or array of float
         Coefficents of the dispersion formula. Number of coefficients depends on the formula.
     """
@@ -2099,12 +2102,13 @@ def parse_glass_file(filename):
         encoding_guess = encoding_guesses[0]
     else:
         encoding_guess = 'latin-1'
-    f = open(filename, 'r', encoding=encoding_guess)
+    with open(filename, 'r', encoding=encoding_guess) as cat_file:
+        cat_data = cat_file.readlines()  # read the whole file as a list of strings
     cat_comment = ''  # A comment pertaining to the whole catalog file
     glass_catalog = {}
     glassname = ''
     # print(f'Reading Catalog {filename}')
-    for line in f:
+    for i_line, line in enumerate(cat_data):
         if not line.strip(): continue  # Blank line
         if line.startswith('CC '):
             cat_comment = line[2:].strip()
@@ -2134,10 +2138,22 @@ def parse_glass_file(filename):
             glass_catalog[glassname]['ignore_thermal_exp'] = 0 if (len(ed) < 6) else int(float(ed[5]))
         elif line.startswith('CD '):  # Dispersion formula coefficients
             cd = line.split()[1:]
+            # Check the number of coefficients
+            n_coeff = num_coeff[glass_catalog[glassname]['dispform']-1]
+            # Use additional lines if there is insufficient number of coefficients found
+            lookahead = 1
+            while len(cd) < n_coeff:
+                cd.extend(cat_data[i_line + lookahead].split())  # Extend list to include next line
+                lookahead += 1
             glass_catalog[glassname]['cd'] = [float(a) for a in cd]
         elif line.startswith('TD '):  # dn/dT formula data
             td = line.split()[1:]
             if not td: continue     ## the Schott catalog sometimes uses an empty line for the "TD" label
+            lookahead = 1
+            # Some catalogs split this data over several lines, so do a lookahead if there is not enough data
+            while len(td) < 7:  # There should be seven numbers D0 D1 D2 E0 E1 lamda_tk ref_temp
+                td.extend(cat_data[i_line + lookahead].split())  # Extend list to include next line
+                lookahead += 1
             glass_catalog[glassname]['td'] = [float(a) for a in td]
         elif line.startswith('OD '):  # Relative cost and environmental data
             od = line.split()[1:]
@@ -2179,7 +2195,7 @@ def parse_glass_file(filename):
         if glassname:
             glass_catalog[glassname]['text'] += line
 
-    f.close()
+    # f.close()
     if glassname:  # Strongly suggests file was read with correctly guessed encoding
         cat_encoding = encoding_guess
     else:
