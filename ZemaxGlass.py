@@ -29,6 +29,9 @@ import re
 This file contains a set of utilities for reading Zemax glass (*.agf) files, analyzing glass
 properties, and displaying glass data.
 
+It also implements some methods of glass selection for achromatization and athermalization
+of optical systems. 
+
 See LICENSE.txt for a description of the MIT/X license for this file.
 
 The module has dependencies on numpy, matplotlib, scipy, pandas and the ref_index module.
@@ -1599,7 +1602,7 @@ class ZemaxGlassLibrary(object):
         cat_list : list of str
             List of catalogs from which the corresponding glasses come.
         glass_list : list of str
-            List of glass names
+            List of glass names, same length as cat_list.
         buch_fits : ndarray of float
             Buchdahl fit parameters for the listed glasses, where buch_fits[:, 0] is alpha,
             buch_fits[:, 1] is nu_1, buch_fits[:, 2] is nu_2 and (if order==3) buch_fits[:, 3] is nu_3 
@@ -1621,6 +1624,66 @@ class ZemaxGlassLibrary(object):
             if show_progress and clear_output_possible:
                 update_progress((i_glass + 1.0) / len(glass_list), bar_length=50)
         return cat_list, glass_list, buch_fits
+
+
+    def buchdahl_fit(self, wv, wv_center, alpha, order=3, catalog=None, glass=None, 
+                            show_progress=False):
+        """
+        Fit a Buchdahl dispersion function to the specified glasses and catalogs.
+        An appropriate Buchdahl alpha parameter value must be provided.
+        This can be determined for the glass catalog using the buchdahl_find_alpha() method.
+
+
+        Parameters
+        ----------
+        wv : array of float
+            Wavelength samples to use for performing the fit. If > 100.0, units of nm are assumed, otherwise microns.
+        wv_center : float
+            The center (reference) wavelength to use for the Buchdahl fit. Should be in the range of wv.
+        alpha : float
+            The Buchdahl alpha parameter to use for fitting. Can be determined using buchdahl_find_alpha().
+            Alternatively, give a generic value of about 2.5 for typical optical glass catalogs.
+        order : int, optional
+            The order of the Buchdahl fit. Only order 2 and 3 are supported. Defaults to 3.
+        catalog : list of str, optional
+            A list of catalogs to be processed. Defaults to all catalogs in the library.
+        glass : list of string, optional
+            List of glasses to process. Defaults to all glasses in the catalogs.
+        show_progress : boolean
+            If set True, shows a simple text progress bar for all the requested glasses.
+            Default is False (no progress bar is shown). Only works if IPython is installed.
+            Useful for interactive work in notebooks.
+
+        Returns
+        -------
+        cat_list : list of str
+            List of catalogs from which the corresponding glasses come.
+        glass_list : list of str
+            List of glass names, same length as cat_list.
+        buch_fits : ndarray of float
+            Buchdahl fit parameters (nu) for the listed glasses, where buch_fits[:, 0] is alpha,
+            buch_fits[:, 1] is nu_1, buch_fits[:, 2] is nu_2 and (if order==3) buch_fits[:, 3] is nu_3
+        n_centers : ndarray of float
+            Refractive index at the center (reference) wavelength.
+
+
+        """
+        # Determine the refractive indices of the glasses at the given wavelengths
+        cat_list, glass_list, indices = self.get_indices(wv, catalog=catalog, glass=glass)
+        # Determine the refractive index of the glass at the center wavelength
+        cat_list, glass_list, n_centers = self.get_indices(wv_center, catalog=catalog, glass=glass)
+        # Find the Buchdahl coefficients (2 or 3), with the given alpha value.
+        for i_glass in range(len(glass_list)):
+            # The following will return a list of float, alpha, nu_1, nu_2 and (if order==3) nu_3
+            buch_fit = buchdahl_fit(wv, indices[i_glass, :], wv_center, n_centers[i_glass], alpha=alpha, order=order)
+
+            if i_glass == 0:
+                buch_fits = buch_fit
+            else:
+                buch_fits = np.vstack((buch_fits, buch_fit))
+            if show_progress and clear_output_possible:
+                update_progress((i_glass + 1.0) / len(glass_list), bar_length=50)
+        return cat_list, glass_list, buch_fits, n_centers
      
 
     ## =============================================================================
