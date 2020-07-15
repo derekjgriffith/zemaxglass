@@ -1581,6 +1581,7 @@ class ZemaxGlassLibrary(object):
         ----------
         wv : array of float
             Wavelength samples to use for performing the fit. If > 100.0, units of nm are assumed, otherwise microns.
+            Must be in increasing order.
         wv_center : float
             The center (reference) wavelength to use for the Buchdahl fit. Should be in the range of wv.
         order : int, optional
@@ -1638,11 +1639,12 @@ class ZemaxGlassLibrary(object):
         ----------
         wv : array of float
             Wavelength samples to use for performing the fit. If > 100.0, units of nm are assumed, otherwise microns.
+            Must be in increasing order.
         wv_center : float
             The center (reference) wavelength to use for the Buchdahl fit. Should be in the range of wv.
         alpha : float
             The Buchdahl alpha parameter to use for fitting. Can be determined using buchdahl_find_alpha().
-            Alternatively, give a generic value of about 2.5 for typical optical glass catalogs.
+            Alternatively, give a generic value of about 2.5 for typical optical glass catalogs in the visible spectrum.
         order : int, optional
             The order of the Buchdahl fit. Only order 2 and 3 are supported. Defaults to 3.
         catalog : list of str, optional
@@ -1684,7 +1686,86 @@ class ZemaxGlassLibrary(object):
             if show_progress and clear_output_possible:
                 update_progress((i_glass + 1.0) / len(glass_list), bar_length=50)
         return cat_list, glass_list, buch_fits, n_centers
-     
+
+    def buchdahl_fit_eta(self, wv, i_wv_ref, alpha, catalog=None, glass=None, 
+                            show_progress=False):
+        """
+        Find eta coefficients of Buchdahl dispersive power function for the specified glasses and catalogs.
+        An appropriate Buchdahl alpha parameter value must be provided.
+        The best value of the Buchdahl alpha parameter can be determined for the glass catalog 
+        using the buchdahl_find_alpha() method.
+
+        The reference wavelength must be one of the given wavelengths.
+
+        The polynomial order of the fit will be one less than the number of wavelengths (n=len(wv)), but
+        any number of wavelengths can be provided resulting in n-1 eta coefficients for each glass.
+
+        This method uses linear algebra to find an exact (within numerical precision) solution.
+
+        Parameters
+        ----------
+        wv : array of float
+            Wavelength samples to use for performing the fit. If > 100.0, units of nm are assumed, otherwise microns.
+            Must be in increasing order and distinct.
+        i_wv_ref : int
+            The index of the reference wavelength to use for the Buchdahl fit. Must be within the length of the wv input. 
+        alpha : float
+            The Buchdahl alpha parameter to use for fitting. Can be determined using buchdahl_find_alpha().
+            Alternatively, give a generic value of about 2.5 for typical optical glass catalogs in the visible spectrum.
+        catalog : list of str, optional
+            A list of catalogs to be processed. Defaults to all catalogs in the library.
+        glass : list of string, optional
+            List of glasses to process. Defaults to all glasses in the catalogs.
+        show_progress : boolean
+            If set True, shows a simple text progress bar for all the requested glasses.
+            Default is False (no progress bar is shown). Only works if IPython is installed.
+            Useful for interactive work in notebooks.
+
+        Returns
+        -------
+        cat_list : list of str
+            List of catalogs from which the corresponding glasses come.
+        glass_list : list of str
+            List of glass names, same length as cat_list.
+        buch_etas : ndarray of float
+            Buchdahl dispersive power fit parameters (eta) for the listed glasses.
+            The number of coefficents is one less than the number of wavelengths
+            provided (wv).
+        n_ref : ndarray of float
+            Refractive index at the reference wavelength, input wv[i_wv_ref].
+        
+        """
+        n_wv = len(wv)  # The number of wavelengths
+        # Determine the catalog refractive indices of the glasses at the given wavelengths
+        cat_list, glass_list, indices = self.get_indices(wv, catalog=catalog, glass=glass)
+        n_ref = indices[:, i_wv_ref]  # Extract the indices at the reference wavelength
+        # Compute the Buchdahl omega values at the wavelengths
+        omega = buchdahl_omega(wv, wv[i_wv_ref], alpha)[:, np.newaxis]
+        print(omega)
+        # Form a matrix of n_wv rows by n_wv-1 columns, where power of omega increase across columns
+        # There is a row for each omega value so the first column is just the omega values
+        omega_mat = omega  # First column is just omega**1
+        for i_wv in range(2, n_wv):  # Add higher powers of omega
+            omega_mat = np.hstack((omega_mat, omega**i_wv))
+        # Delete the row of zeros corresponding to the reference wavelength to get a square matrix
+        omega_mat = np.delete(omega_mat, i_wv_ref, axis=0)
+        # Also delete the reference refractive index from the indices matrix
+        indices = np.delete(indices, i_wv_ref, axis=1)
+        # Invert the omega_mat matrix for later use
+        omega_mat_inv = np.linalg.inv(omega_mat)
+        for i_glass in range(len(glass_list)):    
+            # Compute the dispersive power at all wavelengths for this glass
+            # Dispersive power is by definition also zero at the reference wavelength
+            dispersive_power = (indices[i_glass, :] - n_ref[i_glass]) / (n_ref[i_glass] - 1.0)
+            buch_eta = np.matmul(omega_mat_inv, dispersive_power)
+            if i_glass == 0:
+                buch_etas = buch_eta  # Start
+            else:
+                buch_etas = np.vstack((buch_etas, buch_eta))  # Add result for this glass
+            if show_progress and clear_output_possible:
+                update_progress((i_glass + 1.0) / len(glass_list), bar_length=50)
+        return cat_list, glass_list, buch_etas, n_ref               
+
 
     ## =============================================================================
     def cull_library(self, key1, tol1, key2=None, tol2=None):
