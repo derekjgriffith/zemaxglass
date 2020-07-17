@@ -14,7 +14,7 @@ jupyter:
 ---
 
 # Application of de Albuquerque Method of Glass Selection
-The method of glass selection proposed by de Albuquerque et al. \cite{Albuquerque2012} is illustrated here. Only steps 1 to 3 described in de Albuquerque et al. are implemented.
+The method of glass selection proposed by de Albuquerque et al. \cite{Albuquerque2012, Albuquerque2014, Albuquerque2016} is illustrated here for searching of 3-glass combinations. Only steps 1 to 3 described in de Albuquerque et al. \cite{Albuquerque2012} are implemented.
 
 The method makes use of the Buchdahl dispersion function where the refractive index of a material, is written as
 \begin{equation}\label{eq:buchdahl}
@@ -93,8 +93,10 @@ k_gls = 3  # Searching for a 3-glass combination
 ohara_catalog = 'ohara_20200623'  # filter with S-
 schott_catalog = 'schott_20180601'  # filter with N-
 hikari_catalog = 'nikon-hikari_201911'  # no filter
+# Pick one of the catalogs and read the data with relevant selection filters
+pick_catalog = ohara_catalog
 gls_lib = zg.ZemaxGlassLibrary(zg.agfdir, 
-                                     catalog=ohara_catalog, # glass_match='N-',
+                                     catalog=pick_catalog, glass_match='S-',
                                      wavemin=wv_lo, wavemax=wv_hi, degree=10, select_status=[0, 1])
 # Calculate opto-thermal coefficients and add to the glass library
 gls_lib.add_opto_thermal_coeff(temp_lo, temp_hi, wv_ref=wv_0)
@@ -103,19 +105,19 @@ gls_lib.add_opto_thermal_coeff(temp_lo, temp_hi, wv_ref=wv_0)
 
 ```python
 # Compute best fit Buchdahl alpha parameter for the glass library
-cat, gls, buch_fits = gls_lib.buchdahl_find_alpha(wv, wv_0, show_progress=True)
-print(f'Processed {len(gls)} glasses.')
+%time cat, gls, buch_fits = gls_lib.buchdahl_find_alpha(wv, wv_0, show_progress=True)
+print(f'Processed {len(gls)} glasses from the {pick_catalog.title()} catalog.')
 ```
 
 ```python
 # Calculate and display the mean Buchdahl alpha parameter value
 buchdahl_alpha = buch_fits[:, 0].mean()
-display(Latex(f'The mean Buchdahl $\\alpha$ for this glass library is {buchdahl_alpha:4.6f}'))
+display(Latex(f'The mean, optimally fitted Buchdahl $\\alpha$ parameter for this glass library is {buchdahl_alpha:4.6f}'))
 ```
 
 ```python
-# Now fit again, this time with a constant alpha for all glasses, should go quicker
-cat, gls, buch_fit_nu, refr_index_0 = gls_lib.buchdahl_fit(wv, wv_0, alpha=buchdahl_alpha, show_progress=True)
+# Now fit again, this time with a constant (optimal mean) alpha for all glasses, should go quicker
+%time cat, gls, buch_fit_nu, refr_index_0 = gls_lib.buchdahl_fit(wv, wv_0, alpha=buchdahl_alpha, show_progress=True)
 print(f'Processed {len(gls)} glasses.')
 ```
 
@@ -172,7 +174,7 @@ where the $\omega_i$ Buchdahl spectral coordinates are computed using Equation \
 eta_gls = buch_fit_nu / (refr_index_0 - 1.0)  # One row per glass in the library
 # Calculate the Buchdahl omega coordinates
 omega = zg.buchdahl_omega(wv, wv_0, buchdahl_alpha)
-display(Latex(f'The Buchdahl $\\omega$ wavelength coordinates are {omega}'))
+display(Latex(f'The Buchdahl $\\omega$ spectral coordinates are {omega}'))
 # In this case, the Delta Omega Bar matrix is 3 by 3, so hack this as follows
 delta_omega = -np.diff(omega)
 delta_omega_2 = -np.diff(omega**2.0)
@@ -278,7 +280,7 @@ all of which are defined above, and the absolute chromatic focal shift is estima
 
 
 ```python
-# Calculate some vectors for further processing
+# Calculate some vectors for further processing, refer to Albuquerque 2012 for more information
 big_s_bar = np.ones(k_gls)  # Row vector of k ones
 e_hat = np.vstack((np.array([1.0]), np.zeros((wv.size-1, 1))))  # Column vector with 1 at the top and zeros below
 big_n_g = len(gls)  # Number of glasses in the library
@@ -373,21 +375,48 @@ combo_df = pd.DataFrame({'gls_1': glname_1, 'pow_1': norm_pow[:, 0]/efl, # Give 
                          'F_1': big_f_1, 'F_2': big_f_2*efl, 'F_4': big_f_4, 'F_5': big_f_5})
 # Remove all the rows with any column that is a Nan
 combo_df.dropna(how='any', inplace=True)
-
 ```
 
 ```python
 # Eliminate combinations with large amounts of (absolute) optical power
 combo_df = combo_df[combo_df['F_1'] < 10.0]
 # Select for small color aberration
-combo_df = combo_df[combo_df['F_2'] < 0.1]
+combo_df = combo_df[combo_df['F_2'] < 0.2]
 # Select for small opto-thermal sensitivity
-combo_df = combo_df[np.abs(combo_df['F_4']) < 0.1]
+combo_df = combo_df[np.abs(combo_df['F_4']) < 0.2]
 ```
 
 ```python
+latex_flag = True
 combo_df.sort_values(by=['F_2'], inplace=True)
-display(combo_df)
+if latex_flag:
+    display(Latex('\\clearpage\\begin{center}Optimal Glass Triplet Candidates for Thermo-Chromatic Performance'
+                  f' ({temp_lo}$^\circ$C to {temp_hi}$^\circ$C), Sorted by $F_2$\end{{center}}'))
+    display(Latex(combo_df.to_latex(index=False, longtable=True, escape=False,
+                                   header=['Glass 1', 'Power 1 [$\mathrm{mD}$]',
+                                           'Glass 2', 'Power 2 [$\mathrm{mD}$]', 
+                                           'Glass 3', 'Power 3 [$\mathrm{mD}$]',
+                                           '$F_1$', '$F_2$', '$F_4$ [mm]', '$F_5 [mm]$'],
+                                   float_format="%.4f" 
+                                  )))
+else:
+    display(combo_df)
+```
+
+```python
+combo_df.sort_values(by=['F_5'], inplace=True)
+if latex_flag:
+    display(Latex('\\clearpage\\begin{center}Optimal Glass Triplet Candidates for Thermo-Chromatic Performance'
+                  f' ({temp_lo}$^\circ$C to {temp_hi}$^\circ$C), Sorted by $F_5$\end{{center}}'))
+    display(Latex(combo_df.to_latex(index=False, longtable=True, escape=False,
+                                   header=['Glass 1', 'Power 1 [$\mathrm{mD}$]',
+                                           'Glass 2', 'Power 2 [$\mathrm{mD}$]', 
+                                           'Glass 3', 'Power 3 [$\mathrm{mD}$]',
+                                           '$F_1$', '$F_2$', '$F_4$ [mm]', '$F_5$ [mm]'],
+                                   float_format="%.4f" 
+                                  )))
+else:
+    display(combo_df)
 ```
 
 ## Step 4 - Determination of Aplanatic Solution
@@ -404,9 +433,15 @@ The solutions are tabulated and subject to ranking and post-Pareto analysis. The
 
 [<a id="cit-Albuquerque2012" href="#call-Albuquerque2012">Albuquerque2012</a>] Fonseca Br\'{a}ulio, Sasian Jose, Luis Fabiano <em>et al.</em>, ``_Method of glass selection for color correction in optical system design_'', Optics Express, vol. 20, number 13, pp. 13592--13611, Jun 2012.  [online](http://www.opticsexpress.org/abstract.cfm?URI=oe-20-13-13592)
 
+[<a id="cit-SchottTIE29" href="#call-SchottTIE29">SchottTIE29</a>] {Schott Advanced, ``TIE-29 Refractive Index and Dispersion'', Schott Inc., number: ,   2016.  [online](https://www.schott.com/d/advanced_optics/02ffdb0d-00a6-408f-84a5-19de56652849/1.2/tie_29_refractive_index_and_dispersion_eng.pdf)
+
 [<a id="cit-Reshidko2013" href="#call-Reshidko2013">Reshidko2013</a>] D. Reshidko and J. Sasián, ``_Method of calculation and tables of optothermal coefficients and thermal diffusivities for glass_'', Optical System Alignment, Tolerancing, and Verification VII,  2013.  [online](https://doi.org/10.1117/12.2036112)
 
-[<a id="cit-SchottTIE29" href="#call-SchottTIE29">SchottTIE29</a>] {Schott Advanced, ``TIE-29 Refractive Index and Dispersion'', Schott Inc., number: ,   2016.  [online](https://www.schott.com/d/advanced_optics/02ffdb0d-00a6-408f-84a5-19de56652849/1.2/tie_29_refractive_index_and_dispersion_eng.pdf)
+[<a id="cit-de2014multi" href="#call-de2014multi">de2014multi</a>] !! _This reference was not found in biblio.bib _ !!
+
+[<a id="cit-Albuquerque2014" href="#call-Albuquerque2014">Albuquerque2014</a>] B. F. C. de Albuquerque, ``_A multi-objective memetic approach for the automatic design of optical systems_'',  2014.  [online](http://mtc-m16d.sid.inpe.br/col/sid.inpe.br/mtc-m19/2014/01.15.12.56/doc/publicacao.pdf)
+
+[<a id="cit-Albuquerque2016" href="#call-Albuquerque2016">Albuquerque2016</a>] Fonseca Br\'{a}ulio, Luis Fabiano and Silva Amauri, ``_Multi-objective approach for the automatic design of optical systems_'', Opt. Express, vol. 24, number 6, pp. 6619--6643, Mar 2016.  [online](http://www.opticsexpress.org/abstract.cfm?URI=oe-24-6-6619)
 
 
 
