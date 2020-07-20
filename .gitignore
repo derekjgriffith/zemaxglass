@@ -9,3 +9,5 @@ ZemaxGlass.egg-info/
 *.log
 *.out
 *.gz
+*.sav
+*.tex
