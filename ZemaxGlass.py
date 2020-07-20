@@ -756,6 +756,103 @@ class ZemaxGlassLibrary(object):
 
         return
 
+    def delete_glasses(self, catalog=None, glass=[], or_glass_match='a*', and_glass_match='.*', 
+                        parm_range={}):
+        '''
+        Delete the named glass or glasses from the named catalog or catalogs.
+        If no catalog is given, then the glass(es) will be deleted from all 
+        catalogs in the library, should there be any duplicate names.
+
+        Regular expressions can be provided as further filters.
+
+        Further filtering can then be performed on glass parameters that are
+        presently available for the glasses. Only numerical parameters can be selected for
+        selection.
+        A range for any number of existing glass numeric parameters can be specified
+        using a dict in which the key is the parameter name and the value is a
+        list or tuple giving the lower and upper bounds for the parameter.
+
+        Parameters
+        ----------
+        glass : str or list of str
+            A glass name (case sensitive) or list of names to delete from the library.
+            If no glass is given, only glasses that match the given regular expressions
+            will be deleted.
+        catalog : str or list of str
+            A catalog name (case INsensitive) or list of catalog names from which to delete the glasses.
+            If catalog is not given or None, all catalogs will be processed.
+        or_glass_match : str
+            Regular expression to match as an OR condition. That is, named glasses
+            AS WELL AS any glasses matching the expression will be deleted.
+            If no glasses are named or specified as None, glasses that match
+            both regular expressions will be deleted.
+        and_glass_match : str
+            Regular expresion to match as an AND condition. That is named glasses
+            (or glasses matching the `or_glass_match` regular expression)
+            will only be deleted if they ALSO match the provided regular expression
+            input `and_glass_match`.
+        parm_range : dict
+            A set of numeric parameter for the glass to select on e.g. 'nd' for refractive index at d-line.
+            If not given or empty dict (default), this selection criterion will not be applied.
+            The named parameter must be scalar float, that is stored for each glass in the 
+            ZemaxGlassLibrary instance. Some example parameters are:
+                'nd'  : refractive index at the d-line
+                'vd'  : Abbe number relative to the d-line
+                'tce' : thermal coefficient of expansion
+                'opto_therm_coeff : opto-thermal coefficient, provided it has been computed using 
+                    add_opto_thermal_coeff() method.
+            The glass is deleted if any one of the parameter range conditions is met.
+            i.e. if the named parameter lies in the given range.
+            To delete glasses with the parameter outside the a particular range,
+            this method must be called twice, once with the lower deletion range
+            e.g. (-np.inf, -10.0) and once with the high deletion range.
+
+        '''
+        if (catalog == None):
+            catalogs = self.library.keys()
+        elif (len(catalog) > 1) and isinstance(catalog, list):
+            catalogs = catalog
+        else:
+            catalogs = [catalog]
+        # Put both string cases into catalogs and glasses
+        cat_upper = [cat.upper() for cat in catalogs]
+        cat_lower = [cat.lower() for cat in catalogs]
+        catalogs = cat_upper + cat_lower
+        # Make sure glass is a list, even if a single glass
+        if isinstance(glass, list):
+            glasses = glass
+        else:
+            glasses = [glass]
+        gls_upper = [gls.upper() for gls in glasses]
+        gls_lower = [gls.lower() for gls in glasses]
+        glasses = gls_lower + gls_upper
+        cat_discard_list = []
+        gls_discard_list = []
+        for catalog in self.library.keys():
+            for glass in self.library[catalog].keys():
+                if (catalog in catalogs) and ((glass in glasses) or re.match(or_glass_match, glass)):
+                    if re.match(and_glass_match, glass):
+                        if not parm_range:  # no parameter ranges to test
+                            gls_discard_list.append(glass)
+                            cat_discard_list.append(catalog)
+                        else:   # run through the conditions
+                            delete_it = False
+                            for key in parm_range.keys():
+                                parm_val = self.library[catalog][glass][key]
+                                delete_it = delete_it or (parm_val >= parm_range[key][0] and
+                                                          parm_val <= parm_range[key][1])
+                            if delete_it:
+                                gls_discard_list.append(glass)
+                                cat_discard_list.append(catalog)                               
+        # Now do the actual deleting, first glasses
+        for (gls, cat) in zip(gls_discard_list, cat_discard_list):
+            del self.library[cat][gls]
+        # If any catalogue is now empty, discard entirely
+        for cat in set(cat_discard_list):
+            if not self.library[cat]:
+                del self.library[cat]
+
+                      
     ## =========================
     def pprint(self, catalog=None, glass=None):
         '''
@@ -2159,6 +2256,18 @@ class ZemaxGlassLibrary(object):
 ## =============================================================================
 ## End of ZemaxLibrary class
 ## =============================================================================
+
+## =============================================================================
+## GlassCombo class
+## =============================================================================
+
+class GlassCombo(object):
+    """
+    GlassCombo is a class for supporting the search for and analysis of glass combinations
+    for e.g. the achromatisation of optical systems. 
+    """
+    def __init__():
+        pass
 
 def read_library(glassdir, catalog='all'):
     '''
