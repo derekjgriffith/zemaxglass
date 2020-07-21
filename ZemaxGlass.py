@@ -2270,13 +2270,177 @@ class ZemaxGlassLibrary(object):
 ## GlassCombo class
 ## =============================================================================
 
+# First define some combinatorial utility functions
+def combinations(n, r):
+    '''
+    Calculate the number of combinations of n objects taken r at a time
+    with no repeats.
+    '''
+    return np.math.factorial(n) // (np.math.factorial(r) * np.math.factorial(n - r))
+
+def split_combos_m_ways(n, r, m):
+    '''
+    Returns a list of sub-range iterables for n combination r items split into
+    m sub-ranges.
+    '''
+    total_combinations = combinations(n, r)
+    comb_per_sub = total_combinations // m
+    subs = [(0,0)] * m
+    pointer = 0
+    for sub in range(m):
+        subs[sub] = range(pointer, min(pointer + comb_per_sub, total_combinations))
+        pointer += comb_per_sub
+    return subs
+
+def nth_combination(iterable, r, index):
+    '''
+    Returns the ith combination taken r at a time of the given iterable.
+    '''
+    pool = tuple(iterable)
+    n = len(pool)
+    if r < 0 or r > n:
+        raise ValueError
+    c = 1
+    k = min(r, n-r)
+    for i in range(1, k+1):
+        c = c * (n - k + i) // i
+    if index < 0:
+        index += c
+    if index < 0 or index >= c:
+        raise IndexError
+    result = []
+    while r:
+        c, n, r = c*r//n, n-1, r-1
+        while index >= c:
+            index -= c
+            c, n = c*(n-r)//n, n-1
+        result.append(pool[-1-n])
+    return tuple(result)
+
+def gen_combination(start_index, end_index, iterable, r):
+    '''
+    Given a starting and ending index for a combination of items taken r
+    at a time, yields the next combination.
+    Used in conjunction with split_combos_m_ways() to distribute
+    nearly equal processing of glass combinations to multiple 
+    processors.
+    '''
+    index = start_index
+    while index < end_index:
+        yield nth_combination(iterable, r, index)
+        index += 1
+
 class GlassCombo(object):
     """
     GlassCombo is a class for supporting the search for and analysis of glass combinations
-    for e.g. the achromatisation of optical systems. 
+    for e.g. the achromatisation of optical systems.
+
+    A glass combination comprises a number of lens element groups. Each group comprises
+    a number (generally a small number, but at least 2) of distinct glasses selected
+    from a glass library, which may be different per group. The glass combinations
+    that will be tested is the cartesion product of the glass combinations in each group.
+
+    The class is capable of parallel execution. The number of combinations from each
+    group is split over the number of processors. Suppose there are 4 processors.
+    
+    For correct load-balancing, the indices of the combinations for the first
+    group are split into 4 subsets. Processor 1 will then generate one quarter
+    of the combinations from group 1 and take the cartesion product with all the
+    combinations from all the other groups. Likewise for the other three
+    processors.
+    
     """
-    def __init__():
-        pass
+    def __init__(self, wv, i_wv_0, gls_lib_per_grp, k_gls_per_grp, weight_per_grp, efl, 
+                    do_opto_therm=True, delta_temp=1.0, show_progress=False, parallel=True):
+        '''
+        Build a case for computing best combinations of glasses for a first order lens layout,
+        comprising a number of lens groups where the glasses for each group are taken are
+        from a glass library (ZemaxGlassLibrary) and where each group comprises a 
+        fixed number of lens elements (each made of a distinct glass type, taken from
+        the given library). Note that if two group glass libraries have glasses in common,
+        then those common glasses can occur in both groups.
+
+        Each lens group is idealised as a single thin (and flat) paraxial lens.
+
+        A weight per group can be provided, generally with the first group having a weight
+        of one, and for axial color, the weight is usually the marginal ray height at
+        the group divided by the marginal ray height at the first group. These are the
+        absolute paraxial marginal ray heights.
+
+        For lateral color, the weight is related rather to the chief ray height at
+        the paraxial thin lens group.
+
+        Each group must comprise two or more distinct glasses, but the total number of
+        glasses in the system is the sum of k_gls_per_grp, although there can
+        be duplications between groups.
+
+        Parameters
+        ----------
+        wv : np array of float
+            The wavelengths at which the system is to be corrected for chromatic aberration.
+            Preferrably provided in nm, but will be considered as given in micron if
+            less than 100. The number of wavelengths. At least three wavelengths must
+            be provided.
+        i_wv_0 : int
+            The index of the reference wavelength in the wv array. That is, the reference
+            wavelength must be one of the wavelengths provided, typically near the middle
+            of the range.
+        gls_lib_per_grp : list of ZemaxGlassLibrary
+            The glass libraries to be used for each of the lens groups. The number of
+            glasses in the library at least be equal to the number of distinct glasses
+            to be assigned to the group (k_gls_per_grp)
+        k_gls_per_grp : list of int
+            The number of distinct glasses to be chosen at each of the lens groups.
+            All list elements of k_gls_per_grp must be 2 or greater.
+            Same list length as gls_lib_per_grp.
+        weight_per_grp : numpy array of float
+            The weights to assign to the lens groups. The weights must have physical
+            meaning for the process to work. Since the process usually targets the
+            axial color aberration, the ratio of marginal ray height at the lens group
+            to the marginal ray height at the first group, which means that 
+            weight_per_grp[0] = 1 very often.
+        efl : float
+            The focal length in mm of the lens under consideration. This is used to
+            scale the chromatic (and opto-thermal) defocus metrics.
+        do_opto_therm : boolean
+            If set True, the opto-thermal coefficient for the system will be
+            computed, assuming the expansion coefficient of the barrel 
+            material is zero. If the delta_temp input is also given, the
+            opto-thermal defocus will be calculated for the given
+            total temperature swing. Default is True.
+        delta_temp : float
+            The total temperature swing between the minimum and maximum
+            operating temperature of the lens system in K. Default 1.0
+        show_progress : boolean
+            If set True, in an IPython notebook environment, a simple
+            text progress bar will be displayed.
+        parallel : boolean
+            If set True, the code will attempt to run the search in parallel
+            on all available processors. The load balancing may not be
+            ideal, but substantial speedup should occur. Default True.
+            Note that this feature uses the dask.distributed Python module.
+        '''
+
+        # Perform a few simple checks
+        if len(wv) < 3:
+            raise ValueError('Input wv must be a numeric vector of at least 3 floating point wavelength values.')
+        if len(gls_lib_per_grp) != len(k_gls_per_grp):
+            raise ValueError('Input gls_lib_per_grp must be a list of the same length as the k_gls_per_grp input list.')
+        if len(k_gls_per_grp) != len(weight_per_grp):
+            raise ValueError('Input weight_per_grp must be a list of the same length as the k_gls_per_grp input list.')
+
+        # Calculate the total number of combinations to be tested
+        # First fetch the number of glasses in each library
+        num_gls_per_grp = [0] * len(gls_lib_per_grp)
+        comb_per_grp = [0] * len(gls_lib_per_grp)
+        for i_grp, glass_lib in enumerate(gls_lib_per_grp):
+            num_gls_per_grp[i_grp] = glass_lib.num_glasses()
+            comb_per_grp[i_grp] = combinations(num_gls_per_grp[i_grp], k_gls_per_grp[i_grp])
+        # This is the cartesian product of the combinations for each group
+        self.total_combinations = np.array(comb_per_grp, dtype=np.int64).prod()
+        self.comb_per_grp = comb_per_grp
+        self.num_gls_per_grp = num_coeff
+
 
 def read_library(glassdir, catalog='all'):
     '''
