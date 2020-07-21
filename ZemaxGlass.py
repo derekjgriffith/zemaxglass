@@ -755,6 +755,15 @@ class ZemaxGlassLibrary(object):
             return(glasses)
 
         return
+    
+    def num_glasses(self):
+        '''
+        Returns the total number of glasses in the library
+        '''
+        num_gls = 0
+        for catalog in self.library.keys():
+            num_gls += len(self.library[catalog].keys())
+        return num_gls
 
     def delete_glasses(self, catalog=None, glass=[], or_glass_match='a*', and_glass_match='.*', 
                         parm_range={}):
