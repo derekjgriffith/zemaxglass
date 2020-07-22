@@ -1879,7 +1879,6 @@ class ZemaxGlassLibrary(object):
         n_ref = indices[:, i_wv_ref]  # Extract the indices at the reference wavelength
         # Compute the Buchdahl omega values at the wavelengths
         omega = buchdahl_omega(wv, wv[i_wv_ref], alpha)[:, np.newaxis]
-        print(omega)
         # Form a matrix of n_wv rows by n_wv-1 columns, where power of omega increase across columns
         # There is a row for each omega value so the first column is just the omega values
         omega_mat = omega  # First column is just omega**1
@@ -2313,7 +2312,8 @@ def combinations(n, r):
 def split_combos_m_ways(n, r, m):
     '''
     Returns a list of sub-range iterables for n combination r items split into
-    m sub-ranges.
+    m sub-ranges. These ranges are the lexicographical indices, not the 
+    combinations themselves.
     '''
     total_combinations = combinations(n, r)
     comb_per_sub = total_combinations // m
@@ -2363,6 +2363,20 @@ def gen_combination(start_index, end_index, iterable, r):
         yield nth_combination(iterable, r, index)
         index += 1
 
+def delta_buchdahl_omega_bar(omega):
+    '''
+    Calculate the array $\\Delta \\bar{\\Omega}$ for running the de Albuquerque 
+    glass selection process.
+    '''
+    n_min_1 = len(omega) - 1
+    delta_omega_bar = np.zeros((n_min_1, n_min_1))
+    for i_col in range(n_min_1):
+        delta_omega_bar_col =  -np.diff(omega**(i_col+1.0))
+        delta_omega_bar[:, i_col] = delta_omega_bar_col
+    return delta_omega_bar
+
+import dask.distributed as dad
+
 class GlassCombo(object):
     """
     GlassCombo is a class for supporting the search for and analysis of glass combinations
@@ -2381,9 +2395,12 @@ class GlassCombo(object):
     of the combinations from group 1 and take the cartesion product with all the
     combinations from all the other groups. Likewise for the other three
     processors.
+
+    The task scheduling across processors is performed by dask.distributed.
     
     """
-    def __init__(self, wv, i_wv_0, gls_lib_per_grp, k_gls_per_grp, weight_per_grp, efl, 
+    def __init__(self, wv, i_wv_0, gls_lib_per_grp, k_gls_per_grp, weight_per_grp, efl,
+                    buchdahl_alpha=np.nan, 
                     do_opto_therm=True, delta_temp=1.0, show_progress=False, parallel=True):
         '''
         Build a case for computing best combinations of glasses for a first order lens layout,
@@ -2435,6 +2452,11 @@ class GlassCombo(object):
         efl : float
             The focal length in mm of the lens under consideration. This is used to
             scale the chromatic (and opto-thermal) defocus metrics.
+        buchdahl_alpha : float
+            If the Buchdahl alpha parameter is known for the glass collection,
+            this it can be provided here. Defaults to nan. Can be computed using
+            the method buchdahl_find_alpha() or set using buchdahl_set_alpha()
+            later.
         do_opto_therm : boolean
             If set True, the opto-thermal coefficient for the system will be
             computed, assuming the expansion coefficient of the barrel 
@@ -2471,6 +2493,7 @@ class GlassCombo(object):
             comb_per_grp[i_grp] = combinations(num_gls_per_grp[i_grp], k_gls_per_grp[i_grp])
         # This is the cartesian product of the combinations for each group, could be very large
         self.total_combinations = np.array(comb_per_grp, dtype=np.int64).prod()
+
         # Gentle reminder to the user about the number of combinations they could be up against
         self.filename = datetime.now().strftime('%Y%m%d-%H%M%S')
         print(f'Take note that the number of potential glass combinations in this instance is {self.total_combinations}.')
@@ -2483,6 +2506,7 @@ class GlassCombo(object):
         self.wv = wv
         self.i_wv_0 = i_wv_0
         self.wv_0 = wv[i_wv_0]
+        self.num_gls_per_grp = num_gls_per_grp        
         self.comb_per_grp = comb_per_grp  # Total number of potential combinations for each group
         self.k_gls_per_grp = k_gls_per_grp
         self.gls_lib_per_grp = gls_lib_per_grp
@@ -2492,24 +2516,35 @@ class GlassCombo(object):
         self.show_progress = show_progress
         self.efl = efl
         self.parallel = parallel
-        self.buchdahl_alpha = np.nan
+        self.buchdahl_alpha = buchdahl_alpha 
+        # Calculate the buchdahl omega coordinates, will ne nan if buchdahl_alpha is nan
+        self.omega = buchdahl_omega(self.wv, self.wv_0, self.buchdahl_alpha)
+        # The following for 
+        self.delta_omega_bar = delta_buchdahl_omega_bar(self.omega)
         self.get_all_cat_gls()
+        self.buchdahl_alphas = np.empty(len(self.gls_all)) * np.nan  # not yet known
+        # Any dask setup here
+        self.dask_client = None
     
     def get_all_cat_gls(self):
         '''
         Get pair-wise (same length) lists of all the catalogs and glasses in
         the combo.
-        Also updates the corresponding attributes cat and gls in the instance.
+        Also provides the catalogs and glasses per group in the attributes
+        cat_per_grp and gls_per_grp
         '''
         cat = []
         gls = []
+        self.cat_per_grp = []
+        self.gls_per_grp = []     
         for gls_lib in self.gls_lib_per_grp:
             cats, glss = gls_lib.get_all_cat_gls()
+            self.cat_per_grp.append(cats)
+            self.gls_per_grp.append(glss)
             cat.extend(cats)
             gls.extend(glss) 
-        # Also update them in the instance in case they might have changed
-        self.cat = cat
-        self.gls = gls
+        self.cat_all = cat
+        self.gls_all = gls
         return cat, gls       
 
     def buchdahl_find_alpha(self, show_progress=False):
@@ -2517,12 +2552,16 @@ class GlassCombo(object):
         Determine the mean best-fit Buchdahl alpha parameter for ALL the glasses
         in the libraries associated with all groups.
 
+        This method will also calculate or recalculate the Buchdahl omega
+        coordinates.
+
         Parameters
         ----------
         show_progress : boolean
             If set True, will display a simple text progress bar - useful for 
             notebook environment. However, the progress bar is reset for
-            each glass library in the instance.
+            each glass library in the instance. At least you get to see that
+            progress is being made.
         
         Returns
         -------
@@ -2531,15 +2570,155 @@ class GlassCombo(object):
         '''
         buchdahl_alphas = np.array([])
         for gls_lib in self.gls_lib_per_grp:
-            i_lib = 1
-            if show_progress:
-                print()
-                print(f'Processing glass library {i_lib} with {gls_lib.get_num_glasses()} glasses.')
             _, _, buch_fits = gls_lib.buchdahl_find_alpha(self.wv, self.wv_0, show_progress=show_progress)
             buchdahl_alphas = np.hstack((buchdahl_alphas, buch_fits[:, 0]))
         self.buchdahl_alphas = buchdahl_alphas
         self.buchdahl_alpha = buchdahl_alphas.mean()
         self.get_all_cat_gls()  # update lists in case they have changed
+        # And calculate or recalculate the Buchdahl omega coordinates
+        self.omega = buchdahl_omega(self.wv, self.wv_0, self.buchdahl_alpha)
+        self.delta_omega_bar = delta_buchdahl_omega_bar(self.omega)
+    
+    def buchdahl_set_alpha(self, buchdahl_alpha):
+        '''
+        Manually set the Buchdahl alpha parameter for all the glasses in the combo.
+        It is better to find the optimum value using buchdahl_find_alpha().
+        However, that is quite time-consuming, so if the value is already known,
+        it can be set using this method.
+
+        The Buchdahl omega coordinates will also be calculated ot recalculated.
+        '''
+        self.buchdahl_alpha = buchdahl_alpha
+        # Also compute the Buchdahl omega coordinates for the problem
+        self.omega = buchdahl_omega(self.wv, self.wv_0, self.buchdahl_alpha)
+        self.delta_omega_bar = delta_buchdahl_omega_bar(self.omega)        
+
+    def buchdahl_fit_eta(self, show_progress=False):
+        '''
+        Find the Buchdahl eta coefficients for all the glasses in the combo.
+        These are the coefficients of the Buchdahl dispersive power function,
+        not the dispersion function. The results are computed using the
+        ZemaxGlassLibrary.buchdahl_fit_eta() method.
+        '''
+        self.cat_per_grp = []
+        self.gls_per_grp = []
+        self.eta_per_grp = []
+        self.n_ref_per_grp = []
+        if np.isnan(self.buchdahl_alpha):
+            raise ValueError('The Buchdahl alpha parameter must first be set for this combo using buchdahl_find_alpha() or buchdahl_set_alpha().')
+        for gls_lib in self.gls_lib_per_grp:
+            cat, gls, eta, n_ref = gls_lib.buchdahl_fit_eta(self.wv, self.i_wv_0, alpha=self.buchdahl_alpha,
+                                                                show_progress=show_progress)
+            self.cat_per_grp.append(cat)
+            self.gls_per_grp.append(gls)
+            self.eta_per_grp.append(eta)
+            self.n_ref_per_grp.append(n_ref)
+
+    # Utility methods for working with dask.distributed, imported as dad
+
+    def dask_client_setup(self, dask_scheduler=None):
+        '''
+        Adds a dask.distributed compute client to the self instance.
+        Also determines how to partition the problem across the number
+        of available workers.
+
+        Parameters
+        ----------
+        dask_scheduler : str
+            IPnumber:port of the dask.distributed scheduler.
+            Default is None, which means the scheduler will
+            be started on the local machine and the number of 
+            workers should be set appropriately.
+
+        Returns
+        -------
+        '''
+        if dask_scheduler is None:
+            self.dask_client = dad.Client()
+        else:
+            self.dask_client = dad.Client(dask_scheduler)
+        self.dask_num_workers = len(self.dask_client.scheduler_info()['workers'])
+        # Get the index of lens group with the maximum number of possible glass combinations
+        self.dask_get_comb_split_among_workers()
+        print(self.dask_client)
+
+    def dask_get_comb_split_among_workers(self):
+        '''
+        Determine the glass combination index splits on the lens group with
+        the maximum number of combinations.
+        '''
+        # Get the index of lens group with the maximum number of possible glass combinations
+        self.i_grp_max_combo = self.comb_per_grp.index(max(self.comb_per_grp))
+        self.grp_max_combo = self.comb_per_grp[self.i_grp_max_combo]
+        # Get the distribution amongst the available number of workers
+        self.comb_indices_split = split_combos_m_ways(self.num_gls_per_grp[self.i_grp_max_combo], 
+                                    self.k_gls_per_grp[self.i_grp_max_combo],
+                                    self.dask_num_workers)
+
+    def dask_client_restart(self):
+        '''
+        Restarts the dask.distributed client attached to the self instance.
+        '''
+        if self.dask_client is not None:        
+            self.dask_client.restart()
+    
+    def dask_client_info(self):
+        '''
+        Returns a dict with a wealth of information on the dask.distributed client.
+        '''
+        if self.dask_client is not None:
+            return self.dask_client.scheduler_info()
+    
+    def dask_get_dashboard_url(self):
+        '''
+        Gets the URL of the bokeh dashboard for the dask.dsitributed client (if present).
+        '''
+        if self.dask_client is not None:
+            info = self.dask_client.scheduler_info()
+            address = info['address']
+            services = info['services']
+            if 'dashboard' in services.keys():
+                dashport = services['dashboard']  # port of the dashboard bokeh service
+            else:
+                return None
+        # Formulate the URL of the dashboard
+        re_url = r"^[a-z][a-z0-9+\-.]*://([a-z0-9\-._~%!$&'()*+,;=]+@)?([a-z0-9\-._~%]+|\[[a-z0-9\-._~%!$&'()*+,;=:]+\]):([0-9]+)"
+        match = re.match(re_url, address)
+        ip_num = match.groups()[1]
+        dashboard_url = 'http://' + ip_num + ':' + str(dashport)
+        return dashboard_url
+    
+    def dask_open_dashboard(self, new=2):
+        '''
+        Open a browser on the dask.distributed dashboard
+        '''
+        if self.dask_client is not None:
+            dashboard_url = self.dask_get_dashboard_url()
+            if dashboard_url is not None:
+                import webbrowser
+                webbrowser.open(dashboard_url, new=new)
+
+    def run_de_albuquerque(self, combo_ranges):
+        '''
+        Run the de Albuquerque method on a range of combinations.
+
+        Returns
+        -------
+        A pandas or dask.
+        '''
+        pass
+
+    def dask_run_de_albuquerque(self):
+        '''
+        Run the du Albuquerque method on all combinations.
+
+        Retrieves all results and compiles a single unified dataframe.
+
+        Returns
+        -------
+        A pandas or dask dataframe with all results for the GlassCombo
+        '''
+        pass
 
 
 #=======================================
