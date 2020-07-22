@@ -655,12 +655,14 @@ class ZemaxGlassLibrary(object):
         self.debug = debug
         self.degree = degree                    ## the degree of polynomial to use when fitting dispersion data
         # Set up the function to calculate the refractive index of air
+        self.air_index_function_name = air_index_function
         if air_index_function in ['kohl', 'edlen', 'ciddor']:
             self.air_index_function = {'kohl': air_index_kohlrausch, 'edlen': air_index_edlen, 
                                        'ciddor': air_index_ciddor}[air_index_function]
         else:
             warnings.warn(f'Unknown air refractive index function {air_index_function}. Kohlrausch assumed.')
             self.air_index_function = air_index_kohlrausch
+            self.air_index_function_name = 'kohl'
         if wavemin < 100.0:  # Probably given in micron units
             wavemin *= 1000.0
             warnings.warn('Input wavemin is less than 100. Input units of microns assumed and multiplied by 1000 to get units of nm.')
@@ -764,7 +766,7 @@ class ZemaxGlassLibrary(object):
     
     def num_glasses(self):
         '''
-        Returns the total number of glasses in the library
+        Returns the total number of glasses in the library.
         '''
         num_gls = 0
         for catalog in self.library.keys():
@@ -868,7 +870,36 @@ class ZemaxGlassLibrary(object):
             if not self.library[cat]:
                 del self.library[cat]
 
-                      
+    def merge(self, other):
+        '''
+        Merges two ZemaxGlassLibrary instances. Take note that the order matters.
+        If the catalog/glass combination exists in both instances, it will be
+        overwritten by the data in the other instance. The other instance is
+        not affected, but self is returned with other merged into it.
+
+        Also note that after a merge, depending on how the libraries have been
+        processed, the data in the resulting merged library may not be
+        congruent (have all the same fields/properties).
+
+        Parameters
+        ----------
+        other : ZemaxGlassLibrary
+            The glass library to merge into the self instance.
+
+        Returns
+        -------
+        None, self is modified in place.
+
+        '''
+        for catalog in other.library.keys():
+            if catalog not in self.library.keys():
+                self.library[catalog] = {}
+            for glass in other.library[catalog].keys():
+                self.library[catalog][glass] = glass
+        # TODO : should warn about inconsistencies, such as air refractive index model
+        if self.air_index_function_name != other.air_index_function_name:
+            warnings.warn('Merged libraries have different air index reference functions.')
+
     ## =========================
     def pprint(self, catalog=None, glass=None):
         '''
