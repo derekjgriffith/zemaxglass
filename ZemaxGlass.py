@@ -1065,55 +1065,36 @@ class ZemaxGlassLibrary(object):
         zealous : bool, optional
             Whether to remove the "high transmission" and close-to-redundant glasses.
         '''
-
         if (cat not in self.library):
             return
-
         schott_glasses = []
 
         for glass in self.library[cat]:
             schott_glasses.append(glass)
-
         ## Remove the "inquiry glasses".
         I_glasses = ['FK3', 'N-SK10', 'N-SK15', 'BAFN6', 'N-BAF3', 'N-LAF3', 'SFL57', 'SFL6', 'SF11', 'N-SF19', 'N-PSK53', 'N-SF64', 'N-SF56', 'LASF35']
-        num_i = len(I_glasses)
-
         ## Remove the "high-transmission" duplications of regular glasses.
         H_glasses = ['LF5HT', 'BK7HT', 'LLF1HT', 'N-SF57HT', 'SF57HT', 'LF6HT', 'N-SF6HT', 'F14HT', 'LLF6HT', 'SF57HHT', 'F2HT', 'K5HT', 'SF6HT', 'F8HT', 'K7HT']
-        num_h = len(H_glasses)
-
         ## Remove the "soon-to-be-inquiry" glasses from the Schott catalog.
         N_glasses = ['KZFSN5', 'P-PK53', 'N-LAF36', 'UBK7', 'N-BK7']
-        num_n = len(N_glasses)
-
         ## Remove the Zinc-sulfide and zinc selenide glasses.
         ZN_glasses = ['CLEARTRAN_OLD', 'ZNS_VIS']
-        num_zn = len(ZN_glasses)
-
         ## "zealous": remove the "P" glasses specifically designed for hot press molding, and several glasses that are nearly identical to others in the catalog.
         Z_glasses = ['N-F2', 'N-LAF7', 'N-SF1', 'N-SF10', 'N-SF2', 'N-SF4', 'N-SF5', 'N-SF57', 'N-SF6', 'N-ZK7', 'P-LASF50', 'P-LASF51', 'P-SF8', 'P-SK58A', 'P-SK60']
-        num_z = len(Z_glasses)
-
         for glass in schott_glasses:
             remove = (glass in I_glasses) or (glass in H_glasses) or (glass in N_glasses) or (glass in ZN_glasses)
             if zealous:
                 remove = remove or (glass in Z_glasses)
             if remove:
-                del self.library[catalog][glass]
-
+                del self.library[cat][glass]
         ## Refresh any existing information in the library.
         if hasattr(self, 'nglasses'):
-            nglasses = 0
-            for catalog in self.library:
-                for glass in self.library[catalog]:
-                    nglasses += 1
-            self.nglasses = nglasses
-        elif (name == 'glasses'):
+            self.nglasses = self.get_num_glasses()
+        if hasattr(self, 'glasses'):
             glasses = []
             for catalog in self.library:
                 glasses.extend(self.library[catalog].keys())
             self.glasses = glasses
-
         return
 
     ## =========================
