@@ -22,6 +22,7 @@ except ImportError as e:
     warnings.warn('Some air refractive index computations may use the Python module ref_index. Install with "pip install ref_index".')
 import pandas as pd
 import re
+from datetime import datetime
 
 
 
@@ -732,7 +733,6 @@ class ZemaxGlassLibrary(object):
             sigma_max = 1000.0 / wavemin
             self.wavenumbers = np.linspace(sigma_min, sigma_max, nwaves) ## wavenumber in um^-1
             self.waves = 1000.0 / self.wavenumbers                    ## wavelength in nm
-
         return
 
     ## =========================
@@ -1652,8 +1652,19 @@ class ZemaxGlassLibrary(object):
                     #print('Length '+new_col+'  '+str(len(col_dat)))
                     #print(col_dat)
                     pd_df.insert(loc=len(pd_df.columns), column=new_col, value=col_dat)
-        return pd_df         
+        return pd_df
 
+    def get_all_cat_gls(self):
+        '''
+        Get pair-wise (same length) lists of all the catalogs and glasses in
+        the library.
+        '''
+        cat = []
+        gls = []
+        for catalog in self.library.keys():
+            cat.extend([catalog] * len(self.library[catalog].keys()))
+            gls.extend(self.library[catalog].keys()) 
+        return cat, gls   
 
     ## =========================
     def get_polyfit_dispersion(self, glass, catalog):
@@ -2284,7 +2295,7 @@ class ZemaxGlassLibrary(object):
 
 
 ## =============================================================================
-## End of ZemaxLibrary class
+## End of ZemaxGlassLibrary class
 ## =============================================================================
 
 ## =============================================================================
