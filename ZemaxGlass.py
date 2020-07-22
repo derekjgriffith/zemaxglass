@@ -750,8 +750,7 @@ class ZemaxGlassLibrary(object):
         if (name == 'nglasses'):
             nglasses = 0
             for catalog in self.library:
-                for glass in self.library[catalog]:
-                    nglasses += 1
+                nglasses += len(self.library[catalog].keys())
             return(nglasses)
         elif (name == 'catalogs'):
             catalogs = self.library.keys()
@@ -764,9 +763,9 @@ class ZemaxGlassLibrary(object):
 
         return
     
-    def num_glasses(self):
+    def get_num_glasses(self):
         '''
-        Returns the total number of glasses in the library.
+        Returns the updated total number of glasses in the library.
         '''
         num_gls = 0
         for catalog in self.library.keys():
@@ -1054,9 +1053,12 @@ class ZemaxGlassLibrary(object):
                 
 
     ## =============================================================================
-    def simplify_schott_catalog(self, zealous=False):
+    def simplify_schott_catalog(self, cat='schott', zealous=False):
         '''
         Remove redundant, little-used, and unusual glasses from the Schott glass catalog.
+
+        This method should be considered deprecated. Instead, consider using
+        delete_glasses(), or using regular expression matching when reading catalogs.
 
         Parameters
         ----------
@@ -1064,12 +1066,12 @@ class ZemaxGlassLibrary(object):
             Whether to remove the "high transmission" and close-to-redundant glasses.
         '''
 
-        if ('schott' not in self.library):
+        if (cat not in self.library):
             return
 
         schott_glasses = []
 
-        for glass in self.library['schott']:
+        for glass in self.library[cat]:
             schott_glasses.append(glass)
 
         ## Remove the "inquiry glasses".
@@ -1097,7 +1099,7 @@ class ZemaxGlassLibrary(object):
             if zealous:
                 remove = remove or (glass in Z_glasses)
             if remove:
-                del self.library['schott'][glass]
+                del self.library[catalog][glass]
 
         ## Refresh any existing information in the library.
         if hasattr(self, 'nglasses'):
