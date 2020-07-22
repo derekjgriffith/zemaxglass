@@ -604,7 +604,7 @@ class ZemaxGlassLibrary(object):
                     'Handbook of Optics 1', 'Handbook of Optics 2', 'Sellmeier 4', 'Extended',
                     'Sellmeier 5', 'Extended 2', 'Extended 3']
 
-    def __init__(self, dir=None, wavemin=400.0, wavemax=700.0, nwaves=300, catalog='all', glass_match=None,
+    def __init__(self, dir=None, wavemin=400.0, wavemax=700.0, nwaves=300, catalog='all', glass_match='.*', glass_exclude='a^',
                 sampling_domain='wavelength', degree=3, discard_off_band=False, select_status=None, 
                 air_index_function='kohl', debug=False):
         '''
@@ -624,7 +624,13 @@ class ZemaxGlassLibrary(object):
             The catalog or list of catalogs to look for in "dir".
         glass_match : str
             Regular expression to match. The glass is only included in the returned instance if the glass name
-            matches this regular expression. Default is None - all glasses in catalog are returned.     
+            matches this regular expression. Default is '.*', which matches all glasses. The | operator
+            can be used in the RE e.g. to select a number of specific glasses use
+            glass_match='N-LAK10|N-SSK5'. Matching is case INsensitive.
+        glass_exclude : str
+            Regular expression to match for glasses to be excluded. This will override any glasses that have
+            been included by default or by glass_match. Default is 'a^', which excludes no glass.  
+            Matching is case INsensitive. 
         sampling_domain : str, {'wavelength','wavenumber'}
             Whether to sample the spectrum evenly in wavelength or wavenumber.
         degree : int, optional
@@ -689,28 +695,28 @@ class ZemaxGlassLibrary(object):
                     cat_discard_list.append(catalogue)
             for discarded_cat in cat_discard_list:
                 del self.library[discarded_cat]
-        # Discard glasses that do not match the regular expression
-        if glass_match is not None:
-            cat_discard_list = []
-            for catalogue in self.library.keys():
-                discard_list = []
-                for glass in self.library[catalogue].keys():
-                    if not re.match(glass_match, glass):
-                        # print(f'Discarding {catalogue.capitalize()} {glass} RE mismatch')
+        # Discard glasses that do not match the regular expression glass_match
+        # or that do match the regular expression glass_exclude
+        cat_discard_list = []
+        for catalogue in self.library.keys():
+            discard_list = []
+            for glass in self.library[catalogue].keys():
+                if (not re.match(glass_match, glass, flags=re.IGNORECASE)) or re.match(glass_exclude, glass, flags=re.IGNORECASE):
+                    # print(f'Discarding {catalogue.capitalize()} {glass} RE mismatch')
+                    discard_list.append(glass)
+                # Discard glasses based on status
+                if select_status:
+                    if (self.library[catalogue][glass]['status'] not in select_status) and (glass not in discard_list):
                         discard_list.append(glass)
-                    # Discard glasses based on status
-                    if select_status:
-                        if (self.library[catalogue][glass]['status'] not in select_status) and (glass not in discard_list):
-                            discard_list.append(glass)
-                # Ditch the discarded glasses
-                for discarded_glass in discard_list:
-                    del self.library[catalogue][discarded_glass]
-                # If the whole catalogue is now empty, discard entirely
-                if not self.library[catalogue]:
-                    # print(f'------Discarding entire catalog {catalogue.capitalize()}')
-                    cat_discard_list.append(catalogue)
-            for discarded_cat in cat_discard_list:
-                del self.library[discarded_cat]            
+            # Ditch the discarded glasses
+            for discarded_glass in discard_list:
+                del self.library[catalogue][discarded_glass]
+            # If the whole catalogue is now empty, discard entirely
+            if not self.library[catalogue]:
+                # print(f'------Discarding entire catalog {catalogue.capitalize()}')
+                cat_discard_list.append(catalogue)
+        for discarded_cat in set(cat_discard_list):
+            del self.library[discarded_cat]            
 
         self.pressure_ref = 1.0133e5   ## the dispersion measurement default reference pressure (Schott at least), in Pascals
         self.temp_ref = 20.0           ## the dispersion measurement default reference temperature, in degC
@@ -794,12 +800,12 @@ class ZemaxGlassLibrary(object):
             Regular expression to match as an OR condition. That is, named glasses
             AS WELL AS any glasses matching the expression will be deleted.
             If no glasses are named or specified as None, glasses that match
-            both regular expressions will be deleted.
+            both regular expressions will be deleted. Matching is case INsensitive.
         and_glass_match : str
             Regular expresion to match as an AND condition. That is named glasses
             (or glasses matching the `or_glass_match` regular expression)
             will only be deleted if they ALSO match the provided regular expression
-            input `and_glass_match`.
+            input `and_glass_match`. Matching is case INsensitive.
         parm_range : dict
             A set of numeric parameter for the glass to select on e.g. 'nd' for refractive index at d-line.
             If not given or empty dict (default), this selection criterion will not be applied.
@@ -839,8 +845,9 @@ class ZemaxGlassLibrary(object):
         gls_discard_list = []
         for catalog in self.library.keys():
             for glass in self.library[catalog].keys():
-                if (catalog in catalogs) and ((glass in glasses) or re.match(or_glass_match, glass)):
-                    if re.match(and_glass_match, glass):
+                if (catalog in catalogs) and ((glass in glasses) or 
+                        re.match(or_glass_match, glass, flags=re.IGNORECASE)):
+                    if re.match(and_glass_match, glass, flags=re.IGNORECASE):
                         if not parm_range:  # no parameter ranges to test
                             gls_discard_list.append(glass)
                             cat_discard_list.append(catalog)
