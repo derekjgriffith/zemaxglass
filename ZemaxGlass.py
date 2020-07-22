@@ -2327,6 +2327,7 @@ def split_combos_m_ways(n, r, m):
 def nth_combination(iterable, r, index):
     '''
     Returns the ith combination taken r at a time of the given iterable.
+    Lexicographic order.
     '''
     pool = tuple(iterable)
     n = len(pool)
@@ -2352,7 +2353,7 @@ def nth_combination(iterable, r, index):
 def gen_combination(start_index, end_index, iterable, r):
     '''
     Given a starting and ending index for a combination of items taken r
-    at a time, yields the next combination.
+    at a time, yields the next combination. Lexicographical order assumed.
     Used in conjunction with split_combos_m_ways() to distribute
     nearly equal processing of glass combinations to multiple 
     processors.
@@ -2466,14 +2467,86 @@ class GlassCombo(object):
         num_gls_per_grp = [0] * len(gls_lib_per_grp)
         comb_per_grp = [0] * len(gls_lib_per_grp)
         for i_grp, glass_lib in enumerate(gls_lib_per_grp):
-            num_gls_per_grp[i_grp] = glass_lib.num_glasses()
+            num_gls_per_grp[i_grp] = glass_lib.get_num_glasses()
             comb_per_grp[i_grp] = combinations(num_gls_per_grp[i_grp], k_gls_per_grp[i_grp])
-        # This is the cartesian product of the combinations for each group
+        # This is the cartesian product of the combinations for each group, could be very large
         self.total_combinations = np.array(comb_per_grp, dtype=np.int64).prod()
-        self.comb_per_grp = comb_per_grp
-        self.num_gls_per_grp = num_coeff
+        # Gentle reminder to the user about the number of combinations they could be up against
+        self.filename = datetime.now().strftime('%Y%m%d-%H%M%S')
+        print(f'Take note that the number of potential glass combinations in this instance is {self.total_combinations}.')
+        print(f'Depending on available hardware and parallel execution, exhaustive processing could take a long (..long) time.')
+        print(f'Processing time can be reduced by reducing the number of glasses available for each group.')
+        print(f'One approach is to first drastically narrow down the glass selections for each group.')
+        print(f'Intermediate results (if any) will be stored in files, name starting {self.filename} with suitable extension.')
+        # Record all other information in the instance
+        #
+        self.wv = wv
+        self.i_wv_0 = i_wv_0
+        self.wv_0 = wv[i_wv_0]
+        self.comb_per_grp = comb_per_grp  # Total number of potential combinations for each group
+        self.k_gls_per_grp = k_gls_per_grp
+        self.gls_lib_per_grp = gls_lib_per_grp
+        self.weight_per_grp = weight_per_grp
+        self.do_opto_therm = do_opto_therm
+        self.delta_temp = delta_temp
+        self.show_progress = show_progress
+        self.efl = efl
+        self.parallel = parallel
+        self.buchdahl_alpha = np.nan
+        self.get_all_cat_gls()
+    
+    def get_all_cat_gls(self):
+        '''
+        Get pair-wise (same length) lists of all the catalogs and glasses in
+        the combo.
+        Also updates the corresponding attributes cat and gls in the instance.
+        '''
+        cat = []
+        gls = []
+        for gls_lib in self.gls_lib_per_grp:
+            cats, glss = gls_lib.get_all_cat_gls()
+            cat.extend(cats)
+            gls.extend(glss) 
+        # Also update them in the instance in case they might have changed
+        self.cat = cat
+        self.gls = gls
+        return cat, gls       
+
+    def buchdahl_find_alpha(self, show_progress=False):
+        '''
+        Determine the mean best-fit Buchdahl alpha parameter for ALL the glasses
+        in the libraries associated with all groups.
+
+        Parameters
+        ----------
+        show_progress : boolean
+            If set True, will display a simple text progress bar - useful for 
+            notebook environment. However, the progress bar is reset for
+            each glass library in the instance.
+        
+        Returns
+        -------
+        None, the mean best-fit alpha buchdahl parameter is stored in the
+        class attribute buchdahl_alpha. The best fit alphas
+        '''
+        buchdahl_alphas = np.array([])
+        for gls_lib in self.gls_lib_per_grp:
+            i_lib = 1
+            if show_progress:
+                print()
+                print(f'Processing glass library {i_lib} with {gls_lib.get_num_glasses()} glasses.')
+            _, _, buch_fits = gls_lib.buchdahl_find_alpha(self.wv, self.wv_0, show_progress=show_progress)
+            buchdahl_alphas = np.hstack((buchdahl_alphas, buch_fits[:, 0]))
+        self.buchdahl_alphas = buchdahl_alphas
+        self.buchdahl_alpha = buchdahl_alphas.mean()
+        self.get_all_cat_gls()  # update lists in case they have changed
 
 
+#=======================================
+# End of GlassCombo class
+#=======================================
+
+# More utility and helper functions
 def read_library(glassdir, catalog='all'):
     '''
     Get a list of all '*.agf' files in the directory, then call `parse_glassfile()` on each one.
