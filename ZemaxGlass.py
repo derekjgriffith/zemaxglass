@@ -993,6 +993,36 @@ class ZemaxGlassLibrary(object):
                         success = True
         return success
 
+    def abbreviate_cat_names(self, abbreviate_len=1):
+        '''
+        Abbreviate the catalog names in the glass library to a certain number of characters.
+        This helps to shorten catalog listings and can save memory when dealing with long
+        lists of glasses. If duplicate abbreviations are found, the abbreviated string
+        length is increased by 1, until abbreviations are all unique.
+
+        Parameters
+        ----------
+        abbreviate_len : int
+            Number of characters to abbreviate catalog names to. Must be less than 10
+            characters.
+        
+        '''
+        if abbreviate_len > 9:
+            raise ValueError('Unable to abbreviate catalog names with less than 10 characters.')
+        key_changes = {}
+        for old_key in self.library.keys():
+            if len(old_key) >= abbreviate_len:
+                new_key = old_key[0:abbreviate_len].title()
+                if new_key in key_changes.values():  # Oops, already there
+                    self.abbreviate_cat_names(abbreviate_len=abbreviate_len+1)
+                    return
+                else:
+                    key_changes[old_key] = new_key
+        # Now do the actual changes
+        for old_key in key_changes:
+            self.library[key_changes[old_key]] = self.library.pop(old_key)
+
+
     def asDataFrame(self, fields=['nd', 'vd'], catalog=None, glass=None):
         """
         Return selected glass library data as a pandas DataFrame. By default, the catalog and glass name are always 
