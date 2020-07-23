@@ -736,32 +736,32 @@ class ZemaxGlassLibrary(object):
         return
 
     ## =========================
-    def __getattr__(self, name):
-        '''
-        Redirect the default __getattr__() function so that any attempt to generate a currently nonexisting attribute
-        will trigger a method to generate that attribute from existing attributes.
+    # def __getattr__(self, name):
+    #     '''
+    #     Redirect the default __getattr__() function so that any attempt to generate a currently nonexisting attribute
+    #     will trigger a method to generate that attribute from existing attributes.
 
-        Parameters
-        ----------
-        name : str
-            The name of the attribute being accessed.
-        '''
+    #     Parameters
+    #     ----------
+    #     name : str
+    #         The name of the attribute being accessed.
+    #     '''
 
-        if (name == 'nglasses'):
-            nglasses = 0
-            for catalog in self.library:
-                nglasses += len(self.library[catalog].keys())
-            return(nglasses)
-        elif (name == 'catalogs'):
-            catalogs = self.library.keys()
-            return(catalogs)
-        elif (name == 'glasses'):
-            glasses = []
-            for catalog in self.library:
-                glasses.extend(self.library[catalog].keys())
-            return(glasses)
+    #     if (name == 'nglasses'):
+    #         nglasses = 0
+    #         for catalog in self.library:
+    #             nglasses += len(self.library[catalog].keys())
+    #         return(nglasses)
+    #     elif (name == 'catalogs'):
+    #         catalogs = self.library.keys()
+    #         return(catalogs)
+    #     elif (name == 'glasses'):
+    #         glasses = []
+    #         for catalog in self.library:
+    #             glasses.extend(self.library[catalog].keys())
+    #         return(glasses)
 
-        return
+    #     return
     
     def get_num_glasses(self):
         '''
