@@ -2343,14 +2343,14 @@ def split_combos_m_ways(n, r, m):
     '''
     Returns a list of sub-range iterables for n combination r items split into
     m sub-ranges. These ranges are the lexicographical indices, not the 
-    combinations themselves.
+    combinations themselves. Returns a list of 2-tuples of int.
     '''
     total_combinations = combinations(n, r)
     comb_per_sub = total_combinations // m
     subs = [(0,0)] * m
     pointer = 0
     for sub in range(m):
-        subs[sub] = range(pointer, min(pointer + comb_per_sub, total_combinations))
+        subs[sub] = (pointer, min(pointer + comb_per_sub, total_combinations))
         pointer += comb_per_sub
     return subs
 
@@ -2405,7 +2405,12 @@ def delta_buchdahl_omega_bar(omega):
         delta_omega_bar[:, i_col] = delta_omega_bar_col
     return delta_omega_bar
 
+# For running de Albuquerque in parallel
 import dask.distributed as dad
+# For iterating over glass combinations and group cartesian products
+import itertools
+# Logging for messages and such
+import logging
 
 class GlassCombo(object):
     """
@@ -2430,11 +2435,11 @@ class GlassCombo(object):
     
     """
     def __init__(self, wv, i_wv_0, gls_lib_per_grp, k_gls_per_grp, weight_per_grp, efl,
-                    buchdahl_alpha=np.nan, 
+                    buchdahl_alpha=np.nan, sum_abs_pow_limit=2.0, max_result_rows=1000000,
                     do_opto_therm=True, delta_temp=1.0, show_progress=False, parallel=True):
         '''
         Build a case for computing best combinations of glasses for a first order lens layout,
-        comprising a number of lens groups where the glasses for each group are taken are
+        comprising a number of lens groups where the glasses for each group are taken
         from a glass library (ZemaxGlassLibrary) and where each group comprises a 
         fixed number of lens elements (each made of a distinct glass type, taken from
         the given library). Note that if two group glass libraries have glasses in common,
@@ -2452,7 +2457,9 @@ class GlassCombo(object):
 
         Each group must comprise two or more distinct glasses, but the total number of
         glasses in the system is the sum of k_gls_per_grp, although there can
-        be duplications between groups.
+        be duplications between groups. It is recommended that glass catalog names be
+        abbreviated using ZemaxGlass.abbreviate_cat_names() in order to reduce the memory
+        requirements for large result tables.
 
         Parameters
         ----------
@@ -2468,7 +2475,8 @@ class GlassCombo(object):
         gls_lib_per_grp : list of ZemaxGlassLibrary
             The glass libraries to be used for each of the lens groups. The number of
             glasses in the library at least be equal to the number of distinct glasses
-            to be assigned to the group (k_gls_per_grp)
+            to be assigned to the group (k_gls_per_grp). Abbreviate the  catalog names
+            using ZmeaxGlass.abreviate_cat_names() to reduce result table memory.
         k_gls_per_grp : list of int
             The number of distinct glasses to be chosen at each of the lens groups.
             All list elements of k_gls_per_grp must be 2 or greater.
@@ -2487,6 +2495,18 @@ class GlassCombo(object):
             this it can be provided here. Defaults to nan. Can be computed using
             the method buchdahl_find_alpha() or set using buchdahl_set_alpha()
             later.
+        sum_abs_pow_limit : float
+            Glass combinations with relative power distributions having a sum of
+            absolute powers exceeding this limit will be discarded immediately
+            after testing and will therefore not appear in the results dataframe.
+            This is the first line of defence against producing very large result
+            dataframes.
+        max_result_rows: int
+            The maximum number of resulting evaluated glass combinations to return.
+            Iteration over glass combinations will stop once this number of
+            result rows have been inserted into the results dataframe. The 
+            results with sum_abs_pow_lim exceeding the threshold will not be
+            included in the count.
         do_opto_therm : boolean
             If set True, the opto-thermal coefficient for the system will be
             computed, assuming the expansion coefficient of the barrel 
@@ -2513,7 +2533,7 @@ class GlassCombo(object):
             raise ValueError('Input gls_lib_per_grp must be a list of the same length as the k_gls_per_grp input list.')
         if len(k_gls_per_grp) != len(weight_per_grp):
             raise ValueError('Input weight_per_grp must be a list of the same length as the k_gls_per_grp input list.')
-
+        self.num_grp = len(gls_lib_per_grp)  # Number of lens groups in the problem
         # Calculate the total number of combinations to be tested
         # First fetch the number of glasses in each library
         num_gls_per_grp = [0] * len(gls_lib_per_grp)
@@ -2541,20 +2561,23 @@ class GlassCombo(object):
         self.k_gls_per_grp = k_gls_per_grp
         self.gls_lib_per_grp = gls_lib_per_grp
         self.weight_per_grp = weight_per_grp
+        self.max_result_rows = max_result_rows
+        self.max_result_rows_per_worker = np.nan  # Not yet known, will be computed when client is set up
+        self.sum_abs_pow_limit = sum_abs_pow_limit  # Maximum sum of absolute powers per combination (all groups)
         self.do_opto_therm = do_opto_therm
         self.delta_temp = delta_temp
         self.show_progress = show_progress
         self.efl = efl
         self.parallel = parallel
         self.buchdahl_alpha = buchdahl_alpha 
-        # Calculate the buchdahl omega coordinates, will ne nan if buchdahl_alpha is nan
+        # Calculate the buchdahl omega coordinates, will be nan if buchdahl_alpha is nan
         self.omega = buchdahl_omega(self.wv, self.wv_0, self.buchdahl_alpha)
-        # The following for 
+        # The following problem-fixed de Albuquerque vectora/matrices
         self.delta_omega_bar = delta_buchdahl_omega_bar(self.omega)
         self.get_all_cat_gls()
         self.buchdahl_alphas = np.empty(len(self.gls_all)) * np.nan  # not yet known
         # Any dask setup here
-        self.dask_client = None
+        self.worker_iterators = None
     
     def get_all_cat_gls(self):
         '''
@@ -2643,10 +2666,12 @@ class GlassCombo(object):
             self.gls_per_grp.append(gls)
             self.eta_per_grp.append(eta)
             self.n_ref_per_grp.append(n_ref)
+        self.eta_per_grp = np.array(self.eta_per_grp)
+        self.n_ref_per_grp = np.array(self.n_ref_per_grp)
 
     # Utility methods for working with dask.distributed, imported as dad
 
-    def dask_client_setup(self, dask_scheduler=None):
+    def dask_client_setup(self, dask_scheduler=None, num_workers=None):
         '''
         Adds a dask.distributed compute client to the self instance.
         Also determines how to partition the problem across the number
@@ -2657,20 +2682,31 @@ class GlassCombo(object):
         dask_scheduler : str
             IPnumber:port of the dask.distributed scheduler.
             Default is None, which means the scheduler will
-            be started on the local machine and the number of 
-            workers should be set appropriately.
+            be started on the local machine. The number of 
+            workers is set in self according to the number of
+            workers available reported by the scheduler.
+        num_workers : int
+            Overrides number of workers reported by the dask scheduler.
+            This is the number of worker processors that will be started.
 
         Returns
         -------
+        dask_client : dask.distributed.Client
+            The dask client to use for execution of combination search
+            tasks on this GlassCombo.
         '''
         if dask_scheduler is None:
-            self.dask_client = dad.Client()
+            dask_client = dad.Client()
         else:
-            self.dask_client = dad.Client(dask_scheduler)
-        self.dask_num_workers = len(self.dask_client.scheduler_info()['workers'])
+            dask_client = dad.Client(dask_scheduler)
+        if num_workers is not None:
+            self.dask_num_workers = num_workers
+        else:
+            self.dask_num_workers = len(dask_client.scheduler_info()['workers'])
         # Get the index of lens group with the maximum number of possible glass combinations
         self.dask_get_comb_split_among_workers()
-        print(self.dask_client)
+        self.max_result_rows_per_worker = self.max_result_rows_per_worker // self.dask_num_workers
+        return dask_client
 
     def dask_get_comb_split_among_workers(self):
         '''
@@ -2685,32 +2721,33 @@ class GlassCombo(object):
                                     self.k_gls_per_grp[self.i_grp_max_combo],
                                     self.dask_num_workers)
 
-    def dask_client_restart(self):
+    @staticmethod
+    def dask_client_restart(dask_client):
         '''
-        Restarts the dask.distributed client attached to the self instance.
-        '''
-        if self.dask_client is not None:        
-            self.dask_client.restart()
+        Restarts the dask.distributed client given.
+        '''      
+        dask_client.restart()
     
-    def dask_client_info(self):
+    @staticmethod
+    def dask_client_info(dask_client):
         '''
-        Returns a dict with a wealth of information on the dask.distributed client.
+        Returns a dict with a wealth of information on the dask.distributed client
+        and associated workers.
         '''
-        if self.dask_client is not None:
-            return self.dask_client.scheduler_info()
+        return dask_client.scheduler_info()
     
-    def dask_get_dashboard_url(self):
+    @staticmethod
+    def dask_get_dashboard_url(dask_client):
         '''
-        Gets the URL of the bokeh dashboard for the dask.dsitributed client (if present).
+        Gets the URL of the bokeh dashboard for the dask.distributed client (if present).
         '''
-        if self.dask_client is not None:
-            info = self.dask_client.scheduler_info()
-            address = info['address']
-            services = info['services']
-            if 'dashboard' in services.keys():
-                dashport = services['dashboard']  # port of the dashboard bokeh service
-            else:
-                return None
+        info = dask_client.scheduler_info()
+        address = info['address']
+        services = info['services']
+        if 'dashboard' in services.keys():
+            dashport = services['dashboard']  # port of the dashboard bokeh service
+        else:
+            return None
         # Formulate the URL of the dashboard
         re_url = r"^[a-z][a-z0-9+\-.]*://([a-z0-9\-._~%!$&'()*+,;=]+@)?([a-z0-9\-._~%]+|\[[a-z0-9\-._~%!$&'()*+,;=:]+\]):([0-9]+)"
         match = re.match(re_url, address)
@@ -2718,37 +2755,100 @@ class GlassCombo(object):
         dashboard_url = 'http://' + ip_num + ':' + str(dashport)
         return dashboard_url
     
-    def dask_open_dashboard(self, new=2):
+    @staticmethod
+    def dask_open_dashboard(dask_client, new=2):
         '''
-        Open a browser on the dask.distributed dashboard
+        Open a browser on the dask.distributed dashboard.
+        
+        Parameters
+        ----------
+        new : int
+            Default is 2, which means open a new tab if the default browser
+            is already running.
         '''
-        if self.dask_client is not None:
-            dashboard_url = self.dask_get_dashboard_url()
-            if dashboard_url is not None:
-                import webbrowser
-                webbrowser.open(dashboard_url, new=new)
-
-    def run_de_albuquerque(self, combo_ranges):
+        dashboard_url = GlassCombo.dask_get_dashboard_url(dask_client)
+        if dashboard_url is not None:
+            import webbrowser
+            webbrowser.open(dashboard_url, new=new)
+    
+    def dask_run_worker(self, worker_iterator):
         '''
-        Run the de Albuquerque method on a range of combinations.
-
-        Returns
-        -------
-        A pandas or dask.
-        '''
-        pass
-
-    def dask_run_de_albuquerque(self):
-        '''
-        Run the du Albuquerque method on all combinations.
-
-        Retrieves all results and compiles a single unified dataframe.
+        Run the de Albuquerque method on a range of group/glass combinations produced by
+        an iterator.
 
         Returns
         -------
-        A pandas or dask dataframe with all results for the GlassCombo
+        A pandas or dask dataframe.
+        '''        
+        # Allocate output for the maximum number of results per worker
+        worker_dataframe = []
+        # Loop over the iterator until the maximum number of results is obtained
+        for combo in worker_iterator:
+            worker_dataframe.append(combo)
+        return worker_dataframe
+
+    def dask_run_de_albuquerque(self, dask_client):
         '''
-        pass
+        Run the de Albuquerque method on a range of combinations produced by
+        an iterator.
+
+        Returns
+        -------
+        A pandas or dask dataframe with the results.
+        '''  
+        # Produce the iterators
+        self.dask_produce_iterators(dask_client)
+        # A number of worker futures are produced
+        self.dask_futures = []
+        for i_worker in range(self.dask_num_workers):
+            future = dask_client.submit(GlassCombo.dask_run_worker, self, self.worker_iterators[i_worker])
+            self.dask_futures.append(future)
+        result_dataframes = dask_client.gather(self.dask_futures)
+        return result_dataframes
+
+             
+    def dask_produce_iterators(self, dask_client):
+        '''
+        Produce iterators for the du Albuquerque method on multiple dask.distributed workers.
+        This must be called prior to running the problem using a dask_run method.
+
+        This is also used to reset the iterators if a run is completed or if a partial run
+        is to be aborted.
+
+        Returns
+        -------
+        worker_iterators : list of iterators
+            A list of ite
+        '''
+        # Create a number of iterators effectively equal to the number of workers
+        worker_iterators = [None]*self.dask_num_workers
+        # First build dask_num_workers iterators for the lens group with maximum combos
+        for i_worker in range(self.dask_num_workers):
+            print(f'Producing Iterator for Worker {i_worker}')
+            combo_index_range = self.comb_indices_split[i_worker]  # 2-tuple of start end combo indices
+            worker_iterator_max_combo = gen_combination(combo_index_range[0], combo_index_range[1], 
+                                                range(self.num_gls_per_grp[self.i_grp_max_combo]),
+                                                self.k_gls_per_grp[self.i_grp_max_combo])
+            # For each worker build a cartesian product iterator across lens groups
+            grp_iterators = [None]*self.num_grp
+            for i_grp in range(self.num_grp):
+                print(f'Producing Iterator for Group # {i_grp}')                
+                if i_grp == self.i_grp_max_combo:
+                    grp_iterators[i_grp] = worker_iterator_max_combo
+                else:
+                    # This is an ordinary (unsplit) iterator over combinations for the lens group
+                    grp_iterators[i_grp] = itertools.combinations(range(self.num_gls_per_grp[i_grp]),
+                                                    self.k_gls_per_grp[i_grp])
+            worker_iterators[i_worker] = itertools.product(*grp_iterators)
+        self.worker_iterators = worker_iterators
+        return worker_iterators
+
+    @staticmethod
+    def dask_client_shutdown(dask_client):
+        '''
+        Shuts down the dask client associated with this GlassCombo.
+        '''
+        dask_client.shutdown()
 
 
 #=======================================
