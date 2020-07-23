@@ -2341,18 +2341,42 @@ def combinations(n, r):
 
 def split_combos_m_ways(n, r, m):
     '''
-    Returns a list of sub-range iterables for n combination r items split into
+    Returns a list of sub-range tuples for n combination r items split into
     m sub-ranges. These ranges are the lexicographical indices, not the 
     combinations themselves. Returns a list of 2-tuples of int.
+
+    Parameters
+    ----------
+    n : int
+        Number of items (glasses in library)
+    r : int
+        Number of items to choose from n
+    m : int
+        Number of ranges into which to split the combination indices
+
+    Returns
+    -------
+    splits : list of int
+        Number of combination indices in each split.
+    ranges : list of 2-tuples of int
+        Index ranges for each of the splits
+    
     '''
     total_combinations = combinations(n, r)
-    comb_per_sub = total_combinations // m
-    subs = [(0,0)] * m
+    comb_per_sub, remainder = divmod(total_combinations, m)
+    splits = [comb_per_sub] * m
+    for i in range(remainder):
+        splits[i] += 1
+    while splits[-1] == 0:  # Ditch trailing zeros
+        splits.pop(-1)
+    start = []
+    stop = []
     pointer = 0
-    for sub in range(m):
-        subs[sub] = (pointer, min(pointer + comb_per_sub, total_combinations))
-        pointer += comb_per_sub
-    return subs
+    for split in splits:
+        start.append(pointer)
+        pointer += split
+        stop.append(pointer-1)
+    return splits, list(zip(start, stop))
 
 def nth_combination(iterable, r, index):
     '''
@@ -2389,7 +2413,7 @@ def gen_combination(start_index, end_index, iterable, r):
     processors.
     '''
     index = start_index
-    while index < end_index:
+    while index <= end_index:
         yield nth_combination(iterable, r, index)
         index += 1
 
@@ -2543,7 +2567,6 @@ class GlassCombo(object):
             comb_per_grp[i_grp] = combinations(num_gls_per_grp[i_grp], k_gls_per_grp[i_grp])
         # This is the cartesian product of the combinations for each group, could be very large
         self.total_combinations = np.array(comb_per_grp, dtype=np.int64).prod()
-
         # Gentle reminder to the user about the number of combinations they could be up against
         self.filename = datetime.now().strftime('%Y%m%d-%H%M%S')
         print(f'Take note that the number of potential glass combinations in this instance is {self.total_combinations}.')
@@ -2559,6 +2582,7 @@ class GlassCombo(object):
         self.num_gls_per_grp = num_gls_per_grp        
         self.comb_per_grp = comb_per_grp  # Total number of potential combinations for each group
         self.k_gls_per_grp = k_gls_per_grp
+        self.k_gls = sum(k_gls_per_grp)  # Total number of glasses per combination
         self.gls_lib_per_grp = gls_lib_per_grp
         self.weight_per_grp = weight_per_grp
         self.max_result_rows = max_result_rows
@@ -2572,9 +2596,9 @@ class GlassCombo(object):
         self.buchdahl_alpha = buchdahl_alpha 
         # Calculate the buchdahl omega coordinates, will be nan if buchdahl_alpha is nan
         self.omega = buchdahl_omega(self.wv, self.wv_0, self.buchdahl_alpha)
-        # The following problem-fixed de Albuquerque vectora/matrices
+        # The following are constant (per GlassCombo problem) de Albuquerque vectors/matrices
         self.delta_omega_bar = delta_buchdahl_omega_bar(self.omega)
-        self.get_all_cat_gls()
+        self.get_all_cat_gls()  # Obtains cat_all, gls_all, cat_per_grp and gls_per_grp
         self.buchdahl_alphas = np.empty(len(self.gls_all)) * np.nan  # not yet known
         # Any dask setup here
         self.worker_iterators = None
@@ -2704,7 +2728,7 @@ class GlassCombo(object):
         else:
             self.dask_num_workers = len(dask_client.scheduler_info()['workers'])
         # Get the index of lens group with the maximum number of possible glass combinations
-        self.dask_get_comb_split_among_workers()
+        self.dask_get_comb_split_among_workers()  # 
         self.max_result_rows_per_worker = self.max_result_rows_per_worker // self.dask_num_workers
         return dask_client
 
@@ -2717,9 +2741,11 @@ class GlassCombo(object):
         self.i_grp_max_combo = self.comb_per_grp.index(max(self.comb_per_grp))
         self.grp_max_combo = self.comb_per_grp[self.i_grp_max_combo]
         # Get the distribution amongst the available number of workers
-        self.comb_indices_split = split_combos_m_ways(self.num_gls_per_grp[self.i_grp_max_combo], 
+        splits, ranges = split_combos_m_ways(self.num_gls_per_grp[self.i_grp_max_combo], 
                                     self.k_gls_per_grp[self.i_grp_max_combo],
                                     self.dask_num_workers)
+        self.comb_ind_worker_splits = splits
+        self.comb_ind_worker_ranges = ranges
 
     @staticmethod
     def dask_client_restart(dask_client):
@@ -2771,7 +2797,7 @@ class GlassCombo(object):
             import webbrowser
             webbrowser.open(dashboard_url, new=new)
     
-    def dask_run_worker(self, worker_iterator):
+    def dask_run_worker(self, i_worker):
         '''
         Run the de Albuquerque method on a range of group/glass combinations produced by
         an iterator.
@@ -2780,11 +2806,51 @@ class GlassCombo(object):
         -------
         A pandas or dask dataframe.
         '''        
-        # Allocate output for the maximum number of results per worker
+        # Allocate output space for the maximum number of results per worker
+        max_i_combo = min(self.max_result_rows_per_worker, self.max_combo_per_worker)
+        norm_pow = np.zeros((max_i_combo, self.k_gls))  # Normalised powers assigned to each glass
+        sum_abs_norm_pow = np.zeros(max_i_combo)  # Summation of the absolute normalised glass powers
+        abs_chroma_pow_delta = np.zeros(max_i_combo)  # Modulus of the normalised chromatic power shift F_2 = |CCP|
+        therm_power_rate = np.zeros(max_i_combo)  # Rate of change of total optical power with temperature
+        delta_temp_F = np.zeros(max_i_combo)  # Total absolute focal shift over temperature range delta_temp
+        delta_color_F = np.zeros(max_i_combo)  # Absolute focal shift over wavelength |CCP| * F
+        delta_F = np.zeros(max_i_combo)  # RSS delta_temp_F and delta_color_F        
+
         worker_dataframe = []
         # Loop over the iterator until the maximum number of results is obtained
-        for combo in worker_iterator:
+        # Or the interator is exhausted
+        i_combo = 0  # This counts the number of glass combinations processed
+        for combo in self.worker_iterators[i_worker]:
             worker_dataframe.append(combo)
+
+            # Build the eta_bar matrix, one column per glass
+
+            # Build vector of opto-thermal coefficients
+
+            # Calculate the big_g_bar matrix
+
+            # Calculate the determinat of big_g_bar * transpose(big_g_bar)
+
+            # Ditch this combination if the determinant is zero - bad combo
+
+            # Calculate the mashup of the big_g_bar matrix
+
+            # Calculate the big_phi_bar_hat matrix
+
+            # Calculate the chromatic change of power called vector CCP by de Albuquerque
+
+            # Calculate the chromatic focal shift by multiplying by the effective focal length
+
+            # If the sum of absolute normalised powers exceeds threshold,
+            # abort further processing and don't record the result
+            
+            # If the maximum number of rows has been reached, stop and return results
+            i_combo += 1
+            if i_combo == max_i_combo:
+                break
+
+
+
         return worker_dataframe
 
     def dask_run_de_albuquerque(self, dask_client):
@@ -2796,12 +2862,14 @@ class GlassCombo(object):
         -------
         A pandas or dask dataframe with the results.
         '''  
-        # Produce the iterators
+        # Produce the iterators, consider maving this out
+        # may want to fetch another set of results
         self.dask_produce_iterators(dask_client)
         # A number of worker futures are produced
         self.dask_futures = []
+        print('Launching workers...')
         for i_worker in range(self.dask_num_workers):
-            future = dask_client.submit(GlassCombo.dask_run_worker, self, self.worker_iterators[i_worker])
+            future = dask_client.submit(GlassCombo.dask_run_worker, self, i_worker)
             self.dask_futures.append(future)
         result_dataframes = dask_client.gather(self.dask_futures)
         return result_dataframes
@@ -2822,25 +2890,30 @@ class GlassCombo(object):
         '''
         # Create a number of iterators effectively equal to the number of workers
         worker_iterators = [None]*self.dask_num_workers
+        max_combo_per_worker = [None]*self.dask_num_workers
         # First build dask_num_workers iterators for the lens group with maximum combos
         for i_worker in range(self.dask_num_workers):
             print(f'Producing Iterator for Worker {i_worker}')
-            combo_index_range = self.comb_indices_split[i_worker]  # 2-tuple of start end combo indices
+            combo_index_range = self.comb_ind_worker_ranges[i_worker]  # 2-tuple of start end combo indices
             worker_iterator_max_combo = gen_combination(combo_index_range[0], combo_index_range[1], 
                                                 range(self.num_gls_per_grp[self.i_grp_max_combo]),
                                                 self.k_gls_per_grp[self.i_grp_max_combo])
+            max_combo_per_worker[i_worker] = self.comb_ind_worker_splits[i_worker]  # gets multiplied by unsplit group combos
             # For each worker build a cartesian product iterator across lens groups
             grp_iterators = [None]*self.num_grp
+
             for i_grp in range(self.num_grp):
                 print(f'Producing Iterator for Group # {i_grp}')                
                 if i_grp == self.i_grp_max_combo:
                     grp_iterators[i_grp] = worker_iterator_max_combo
                 else:
                     # This is an ordinary (unsplit) iterator over combinations for the lens group
+                    max_combo_per_worker[i_worker] *= self.comb_per_grp[i_grp]
                     grp_iterators[i_grp] = itertools.combinations(range(self.num_gls_per_grp[i_grp]),
                                                     self.k_gls_per_grp[i_grp])
             worker_iterators[i_worker] = itertools.product(*grp_iterators)
         self.worker_iterators = worker_iterators
+        self.max_combo_per_worker = max_combo_per_worker
         return worker_iterators
 
     @staticmethod
