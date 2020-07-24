@@ -101,6 +101,7 @@ gls_lib = zg.ZemaxGlassLibrary(zg.agfdir,
 # Calculate opto-thermal coefficients and add to the glass library
 gls_lib.add_opto_thermal_coeff(temp_lo, temp_hi, wv_ref=wv_0)
 # Filter out materials with extreme opto-thermal coefficients
+gls_lib.abbreviate_cat_names(abbreviate_len=2)
 ```
 
 ```python
@@ -393,9 +394,9 @@ if latex_flag:
     display(Latex('\\clearpage\\begin{center}Optimal Glass Triplet Candidates for Thermo-Chromatic Performance'
                   f' ({temp_lo}$^\circ$C to {temp_hi}$^\circ$C), Sorted by $F_2$\end{{center}}'))
     display(Latex(combo_df.to_latex(index=False, longtable=True, escape=False,
-                                   header=['Glass 1', 'Power 1 [$\mathrm{mD}$]',
-                                           'Glass 2', 'Power 2 [$\mathrm{mD}$]', 
-                                           'Glass 3', 'Power 3 [$\mathrm{mD}$]',
+                                   header=['Glass 1', 'Power 1 [$\mathrm{kD}$]',
+                                           'Glass 2', 'Power 2 [$\mathrm{kD}$]', 
+                                           'Glass 3', 'Power 3 [$\mathrm{kD}$]',
                                            '$F_1$', '$F_2$', '$F_4$ [mm]', '$F_5 [mm]$'],
                                    float_format="%.4f" 
                                   )))
@@ -409,9 +410,9 @@ if latex_flag:
     display(Latex('\\clearpage\\begin{center}Optimal Glass Triplet Candidates for Thermo-Chromatic Performance'
                   f' ({temp_lo}$^\circ$C to {temp_hi}$^\circ$C), Sorted by $F_5$\end{{center}}'))
     display(Latex(combo_df.to_latex(index=False, longtable=True, escape=False,
-                                   header=['Glass 1', 'Power 1 [$\mathrm{mD}$]',
-                                           'Glass 2', 'Power 2 [$\mathrm{mD}$]', 
-                                           'Glass 3', 'Power 3 [$\mathrm{mD}$]',
+                                   header=['Glass 1', 'Power 1 [$\mathrm{kD}$]',
+                                           'Glass 2', 'Power 2 [$\mathrm{kD}$]', 
+                                           'Glass 3', 'Power 3 [$\mathrm{kD}$]',
                                            '$F_1$', '$F_2$', '$F_4$ [mm]', '$F_5$ [mm]'],
                                    float_format="%.4f" 
                                   )))
@@ -433,15 +434,13 @@ The solutions are tabulated and subject to ranking and post-Pareto analysis. The
 
 [<a id="cit-Albuquerque2012" href="#call-Albuquerque2012">Albuquerque2012</a>] Fonseca Br\'{a}ulio, Sasian Jose, Luis Fabiano <em>et al.</em>, ``_Method of glass selection for color correction in optical system design_'', Optics Express, vol. 20, number 13, pp. 13592--13611, Jun 2012.  [online](http://www.opticsexpress.org/abstract.cfm?URI=oe-20-13-13592)
 
-[<a id="cit-SchottTIE29" href="#call-SchottTIE29">SchottTIE29</a>] {Schott Advanced, ``TIE-29 Refractive Index and Dispersion'', Schott Inc., number: ,   2016.  [online](https://www.schott.com/d/advanced_optics/02ffdb0d-00a6-408f-84a5-19de56652849/1.2/tie_29_refractive_index_and_dispersion_eng.pdf)
-
-[<a id="cit-Reshidko2013" href="#call-Reshidko2013">Reshidko2013</a>] D. Reshidko and J. Sasián, ``_Method of calculation and tables of optothermal coefficients and thermal diffusivities for glass_'', Optical System Alignment, Tolerancing, and Verification VII,  2013.  [online](https://doi.org/10.1117/12.2036112)
-
-[<a id="cit-de2014multi" href="#call-de2014multi">de2014multi</a>] !! _This reference was not found in biblio.bib _ !!
-
 [<a id="cit-Albuquerque2014" href="#call-Albuquerque2014">Albuquerque2014</a>] B. F. C. de Albuquerque, ``_A multi-objective memetic approach for the automatic design of optical systems_'',  2014.  [online](http://mtc-m16d.sid.inpe.br/col/sid.inpe.br/mtc-m19/2014/01.15.12.56/doc/publicacao.pdf)
 
 [<a id="cit-Albuquerque2016" href="#call-Albuquerque2016">Albuquerque2016</a>] Fonseca Br\'{a}ulio, Luis Fabiano and Silva Amauri, ``_Multi-objective approach for the automatic design of optical systems_'', Opt. Express, vol. 24, number 6, pp. 6619--6643, Mar 2016.  [online](http://www.opticsexpress.org/abstract.cfm?URI=oe-24-6-6619)
+
+[<a id="cit-SchottTIE29" href="#call-SchottTIE29">SchottTIE29</a>] {Schott Advanced, ``TIE-29 Refractive Index and Dispersion'', Schott Inc., number: ,   2016.  [online](https://www.schott.com/d/advanced_optics/02ffdb0d-00a6-408f-84a5-19de56652849/1.2/tie_29_refractive_index_and_dispersion_eng.pdf)
+
+[<a id="cit-Reshidko2013" href="#call-Reshidko2013">Reshidko2013</a>] D. Reshidko and J. Sasián, ``_Method of calculation and tables of optothermal coefficients and thermal diffusivities for glass_'', Optical System Alignment, Tolerancing, and Verification VII,  2013.  [online](https://doi.org/10.1117/12.2036112)
 
 
 
