@@ -11,3 +11,4 @@ ZemaxGlass.egg-info/
 *.gz
 *.sav
 *.tex
+Notebooks/dask-worker-space/
