@@ -23,6 +23,7 @@ except ImportError as e:
 import pandas as pd
 import re
 from datetime import datetime
+import copy
 
 
 
@@ -593,6 +594,8 @@ class ZemaxGlassLibrary(object):
     Methods
     -------
     pprint
+    delete_glasses
+    select_glasses
     simplify_schott_catalog
     get_dispersion
     get_polyfit_dispersion
@@ -818,8 +821,9 @@ class ZemaxGlassLibrary(object):
         ----------
         glass : str or list of str
             A glass name (case sensitive) or list of names to delete from the library.
-            If no glass is given, only glasses that match the given regular expressions
-            will be deleted.
+            If no glass is given, only glasses that match the given regular expressions (`or_glass_match`)
+            will be deleted. An exact match is required. This is alternative to providing
+            a regular expression such as '^S-BSL7$|^S-FPL55$' to delete these two glasses.
         catalog : str or list of str
             A catalog name (case INsensitive) or list of catalog names from which to delete the glasses.
             If catalog is not given or None, all catalogs will be processed.
@@ -828,6 +832,9 @@ class ZemaxGlassLibrary(object):
             AS WELL AS any glasses matching the expression will be deleted.
             If no glasses are named or specified as None, glasses that match
             both regular expressions will be deleted. Matching is case INsensitive.
+            Note that 'N-BK7' would match any glass with this sequence of characters,
+            including 'N-BK7A'. To be more specific, force matching at the beginning
+            and end of the string e.g. '^N-BK7$' which would delete only N-BK7.
         and_glass_match : str
             Regular expresion to match as an AND condition. That is named glasses
             (or glasses matching the `or_glass_match` regular expression)
@@ -894,6 +901,78 @@ class ZemaxGlassLibrary(object):
         for cat in set(cat_discard_list):
             if not self.library[cat]:
                 del self.library[cat]
+
+    def select_glasses(self, catalog=None, glass_match='.*', inplace=True):
+        '''
+        Select glasses within a library on the basis of a regular expression.
+
+        Parameters
+        ----------
+        catalog : str or list of str
+            Selection will be confined to the catalog or catalogs given.
+            Defaults to all catalogs in the library.
+        glass_match : str
+            A regular expression to match glass names against. If the glass
+            matches in multiple catalogs provided in the `catalog` input,
+            they will all be selected.
+        inplace : boolean
+            If set True, a copy is returned with the selected glasses.
+            Otherwise the library (`self`) is modified in place.
+
+        Returns
+        -------
+        None if inplace is True, otherwise returns the selection in a new
+        ZemaxGlassLibrary.
+        '''
+        if (catalog == None):
+            catalogs = self.library.keys()
+        elif (len(catalog) > 1) and isinstance(catalog, list):
+            catalogs = catalog
+        else:
+            catalogs = [catalog]
+        # Create a deep copy of the library
+        gls_lib = copy.deepcopy(self)
+        # Delete the glass library data in the copy
+        gls_lib.library = {}
+        for catalog in catalogs:
+            for glass in self.library[catalog].keys():
+                if re.match(glass_match, glass):
+                    if not catalog in gls_lib.library.keys():
+                        gls_lib.library[catalog] = {}  # Create the catalog
+                    gls_lib.library[catalog][glass] = self.library[catalog][glass]
+        if inplace:
+            self = gls_lib
+        else:
+            return gls_lib
+
+    def select_glasses_usingDataFrame(self, df, df_col_names, glass_match='.*', inplace=True):
+        '''
+        Select glasses using catalog and glass names taken from the named columns of
+        a pandas DataFrame.
+
+        Parameters
+        ----------
+        df : pandas DataFrame
+            The pandas DataFrame to use for selection of glasses.
+        df_col_names : list of 2-tuples of str
+            The column name(s) to use for the selection. The list must comprise
+            of 2-tuples with the DataFrame column name of the catalog in the first
+            element and DataFrame column name of the corresponding  glasses in
+            the second element.
+        glass_match : str
+            A regular expression to match the glass name against. Only glasses
+            matching the RE will be selected. Defaults to '.*', which matches
+            all strings.
+        inplace : boolean
+            If set True, a copy is returned with the selected glasses.
+            Otherwise the library (`self`) is modified in place.
+
+        Returns
+        -------
+        None if inplace is True, otherwise returns the selection in a new
+        ZemaxGlassLibrary.                      
+        '''
+        pass
 
     def merge(self, other):
         '''
