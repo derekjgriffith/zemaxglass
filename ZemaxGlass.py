@@ -760,9 +760,35 @@ class ZemaxGlassLibrary(object):
     #         for catalog in self.library:
     #             glasses.extend(self.library[catalog].keys())
     #         return(glasses)
-
     #     return
     
+    def __str__(self):
+        '''
+        A simple function to print the names of the catalogs and glasses in the
+        library. See also pprint() for a more detailed listing of the library.
+        Note the difference in syntax. To call this method use `print(gls_lib)`
+        whereas to pretty print use `gls_lib.pprint()`.
+        '''
+        cat, gls = self.get_all_cat_gls()
+        if not gls:
+            return 'Library is empty.'
+        # Want to print in alphabetical order of catalogs and glasses
+        cats, glss = zip(*sorted(zip(cat, gls)))
+        previous_cat = ''
+        print_str = ''
+        for cat, gls in zip(cats, glss):
+            if cat != previous_cat:
+                print_str += f'Catalog : {cat}\n'
+                col_count = 0
+            previous_cat = f'{cat}'
+            print_str += f'{gls:14s}'
+            if col_count == 8:
+                col_count = 0
+                print_str += '\n'
+            else:
+                col_count += 1
+        return print_str
+
     def get_num_glasses(self):
         '''
         Returns the updated total number of glasses in the library.
