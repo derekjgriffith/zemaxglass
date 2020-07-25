@@ -944,37 +944,38 @@ class ZemaxGlassLibrary(object):
             catalogs = catalog
         else:
             catalogs = [catalog]
-
+        print_str = ''
         for catalog in self.library:
             if (catalog not in catalogs): continue
-            print(catalog.capitalize() + ':')
+            print_str += f'Catalog : {catalog}'
             for glassname in self.library[catalog]:
                 if (glass != None) and (glassname != glass.upper()): continue
                 glassdict = self.library[catalog][glassname]
-                print('  ' + glassname + ':')
-                print('    nd       = ' + str(glassdict['nd']))
-                print('    vd       = ' + str(glassdict['vd']))
-                print('    dispform = ' + str(glassdict['dispform']) + 
-                      ' the ' + ZemaxGlassLibrary.dispformulas[glassdict['dispform']] + ' formula.')
+                print_str += '  ' + glassname + ':\n'
+                print_str += '    nd       = ' + str(glassdict['nd']) + '\n'
+                print_str += '    vd       = ' + str(glassdict['vd']) + '\n'
+                print_str += '    dispform = ' + str(glassdict['dispform']) + \
+                      ', the ' + ZemaxGlassLibrary.dispformulas[glassdict['dispform']-1] + ' dispersion formula.\n'
                 if ('tce' in glassdict):  # thermal coefficient of expansion
-                    print('    tce      = ' + str(glassdict['tce']))
+                    print_str += '    tce      = ' + str(glassdict['tce']) + ' ppm/K\n'
                 if ('density' in glassdict):  # density in g/cc ?
-                    print('    density  = ' + str(glassdict['density']))
+                    print_str += '    density  = ' + str(glassdict['density']) + ' g/cc\n'
                 if ('dpgf' in glassdict):  # relative partial dispersion
-                    print('    dpgf     = ' + str(glassdict['dpgf']))
+                    print_str += '    dpgf     = ' + str(glassdict['dpgf']) + '\n'
                 if ('cd' in glassdict):  # dispersion formula coefficients
-                    print('    cd       = ' + str(glassdict['cd']))
+                    print_str += '    cd       = ' + str(glassdict['cd']) + '\n'
                 if ('td' in glassdict):  # thermal data
-                    print('    td       = ' + str(glassdict['td']))
+                    print_str += '    td       = ' + str(glassdict['td']) + '\n'
                 if ('od' in glassdict):  # environmental data
-                    print('    od       = ' + str(glassdict['od']))
+                    print_str += '    od       = ' + str(glassdict['od']) + '\n'
                 if ('ld' in glassdict):  # valid range of dispersion relation
-                    print('    ld       = ' + str(glassdict['ld']))
+                    print_str += '    ld       = ' + str(glassdict['ld']) + ' is the valid spectral range in microns.\n'
                 if ('interp_coeffs' in glassdict):  # interpolation coefficients for polynomial fit
-                    print('    coeffs   = ' + repr(glassdict['interp_coeffs']))
-
-        print('')
-        return
+                    print_str += '    coeffs   = ' + repr(glassdict['interp_coeffs']) + '\n'
+        if not print_str:
+            print('Library is empty.')
+        else:
+            print(print_str)
 
     def write_agf(self, filename, catalog=None, glasses=None, encoding='latin'):
         """
