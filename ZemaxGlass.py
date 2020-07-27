@@ -2980,7 +2980,7 @@ class GlassCombo(object):
 
     # Utility methods for working with dask.distributed, imported as dadi
 
-    def dask_client_setup(self, dask_scheduler=None, num_workers=None):
+    def dask_client_setup(self, dask_client=None, dask_scheduler=None, num_workers=None):
         '''
         Adds a dask.distributed compute client to the self instance.
         Also determines how to partition the problem across the number
@@ -3004,10 +3004,11 @@ class GlassCombo(object):
             The dask client to use for execution of combination search
             tasks on this GlassCombo.
         '''
-        if dask_scheduler is None:
-            dask_client = dadi.Client()
-        else:
-            dask_client = dadi.Client(dask_scheduler)
+        if dask_client is None:
+            if dask_scheduler is None:
+                dask_client = dadi.Client()
+            else:
+                dask_client = dadi.Client(dask_scheduler)
         if num_workers is not None:
             self.dask_num_workers = num_workers
         else:
