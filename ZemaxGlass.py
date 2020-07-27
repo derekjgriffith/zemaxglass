@@ -3017,7 +3017,7 @@ class GlassCombo(object):
         self.dask_get_comb_split_among_workers()  # 
         self.max_result_rows_per_worker = self.max_result_rows // self.dask_num_workers
         # Produce the iterators
-        self.dask_produce_iterators(dask_client)        
+        # self.dask_produce_iterators(dask_client)        
         return dask_client
 
     def dask_get_comb_split_among_workers(self):
@@ -3143,7 +3143,27 @@ class GlassCombo(object):
         # Allocate output space for the maximum number of results per worker for this run
         # It should be (or become) possible to call this again for another set of results,
         # provided that the worker_iterators are not reset.
-        max_i_combo = min(self.max_result_rows_per_worker, self.max_combo_per_worker[i_worker])
+
+        combo_index_range = self.comb_ind_worker_ranges[i_worker]  # 2-tuple of start end combo indices
+        worker_iterator_max_combo = gen_combination(combo_index_range[0], combo_index_range[1], 
+                                            range(self.num_gls_per_grp[self.i_grp_max_combo]),
+                                            self.k_gls_per_grp[self.i_grp_max_combo])
+        max_combo_per_worker = self.comb_ind_worker_splits[i_worker]  # gets multiplied by unsplit group combos
+        # For each worker build a cartesian product iterator across lens groups
+        grp_iterators = [None]*self.num_grp
+
+        for i_grp in range(self.num_grp):
+            # print(f'Producing Iterator for Group # {i_grp}')                
+            if i_grp == self.i_grp_max_combo:
+                grp_iterators[i_grp] = worker_iterator_max_combo
+            else:
+                # This is an ordinary (unsplit) iterator over combinations for the lens group
+                max_combo_per_worker *= self.comb_per_grp[i_grp]
+                grp_iterators[i_grp] = itertools.combinations(range(self.num_gls_per_grp[i_grp]),
+                                                self.k_gls_per_grp[i_grp])
+        worker_iterator = itertools.product(*grp_iterators)
+
+        max_i_combo = min(self.max_result_rows_per_worker, max_combo_per_worker)
         norm_pow = np.zeros((max_i_combo, self.k_gls))  # Normalised powers assigned to each glass for best correction
         sum_abs_norm_pow = np.zeros(max_i_combo)  # Summation of the absolute normalised glass powers for a combo
         norm_chroma_pow_delta = np.zeros(max_i_combo)  # Modulus of the normalised chromatic power shift F_2 = |CCP|
@@ -3157,7 +3177,7 @@ class GlassCombo(object):
         # Loop over the iterator until the maximum number of combinations results is obtained
         # Or the interator is exhausted
         i_combo = 0  # This counts the number of glass combinations processed by this worker in this run
-        for combo in self.worker_iterators[i_worker]:
+        for combo in worker_iterator:
             combos.append(combo)
             # Build the eta_bar matrix, one column per glass, obtain catalogs and glasses
             combo_cat, combo_gls, eta_bar = self.build_eta_bar(combo)
