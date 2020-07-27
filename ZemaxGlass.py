@@ -947,7 +947,7 @@ class ZemaxGlassLibrary(object):
 
     def select_glasses_usingDataFrame(self, df, df_col_names, glass_match='.*', inplace=True):
         '''
-        Select glasses using catalog and glass names taken from the named columns of
+        Select glasses from a library using catalog and glass names taken from the named columns of
         a pandas DataFrame.
 
         Parameters
@@ -972,14 +972,31 @@ class ZemaxGlassLibrary(object):
         None if inplace is True, otherwise returns the selection in a new
         ZemaxGlassLibrary.                      
         '''
-        pass
+        # Compile the list
+        cats = []
+        glss = []
+        for cat_col, gls_col in df_col_names:
+            cats.extend(df[cat_col].values)
+            glss.extend(df[gls_col].values)  
+        gls_lib = copy.deepcopy(self)
+        # Delete the glass library data in the copy
+        gls_lib.library = {}
+        # Copy over glasses from self as found in the dataframe
+        # provided they match the 
+        for cat, gls in zip(cats, glss):
+            if re.match(glass_match, gls):
+                if cat not in gls_lib.library.keys():
+                    gls_lib.library[cat] = {}
+                gls_lib.library[cat][gls] = copy.deepcopy(self.library[cat][gls])                
+        if inplace:
+            self = gls_lib
+        else:
+            return gls_lib
 
-    def merge(self, other):
+
+    def merge(self, other, inplace=True):
         '''
-        Merges two ZemaxGlassLibrary instances. Take note that the order matters.
-        If the catalog/glass combination exists in both instances, it will be
-        overwritten by the data in the other instance. The other instance is
-        not affected, but self is returned with other merged into it.
+        Merges two ZemaxGlassLibrary instances. 
 
         Also note that after a merge, depending on how the libraries have been
         processed, the data in the resulting merged library may not be
