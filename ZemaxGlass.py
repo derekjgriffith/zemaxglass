@@ -1009,20 +1009,32 @@ class ZemaxGlassLibrary(object):
         ----------
         other : ZemaxGlassLibrary
             The glass library to merge into the self instance.
+        inplace : boolean
+            If True, will alter the first (self) library in place and
+            glasses from the `other` library could overwrite those in `self`.
+            If False, a new library is returned without altering either
+            library. Default True.
 
         Returns
         -------
-        None, self is modified in place.
+        None if inplace=True. If inplace=False, the merged ZemaxGlassLibrary is
+        returned.
 
         '''
+        if not inplace:
+            merged_lib = copy.deepcopy(self)
+        else:
+            merged_lib = self
         for catalog in other.library.keys():
-            if catalog not in self.library.keys():
-                self.library[catalog] = {}
+            if catalog not in merged_lib.library.keys():
+                merged_lib.library[catalog] = {}
             for glass in other.library[catalog].keys():
-                self.library[catalog][glass] = glass
+                merged_lib.library[catalog][glass] = copy.deepcopy(other.library[catalog][glass])
         # TODO : should warn about inconsistencies, such as air refractive index model
-        if self.air_index_function_name != other.air_index_function_name:
+        if merged_lib.air_index_function_name != other.air_index_function_name:
             warnings.warn('Merged libraries have different air index reference functions.')
+        if not inplace:
+            return merged_lib
 
     ## =========================
     def pprint(self, catalog=None, glass=None):
