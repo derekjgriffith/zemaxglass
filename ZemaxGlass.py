@@ -641,7 +641,7 @@ class ZemaxGlassLibrary(object):
             The polynomial degree to use for fitting the dispersion spectrum.
         discard_off_band : boolean
             If set True, will discard glasses where the valid spectral range does not fully cover
-            the interval wavemin to wavemax.
+            the interval wavemin to wavemax. Default is True.
         select_status : list of int
             Select glasses based on status. One or more of the following status codes:
                 0 : Standard
