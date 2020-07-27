@@ -22,7 +22,7 @@ except ImportError as e:
     warnings.warn('Some air refractive index computations may use the Python module ref_index. Install with "pip install ref_index".')
 import pandas as pd
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 import copy
 
 
@@ -2728,10 +2728,12 @@ class GlassCombo(object):
         self.total_combinations = np.array(comb_per_grp, dtype=np.int64).prod()
         # Gentle reminder to the user about the number of combinations they could be up against
         self.filename = datetime.now().strftime('%Y%m%d-%H%M%S')
+        runtime = int(self.total_combinations//5000)
         print(f'Take note that the number of potential glass combinations in this instance is {self.total_combinations}.')
-        print(f'Depending on available hardware and parallel execution, exhaustive processing could take a long (..long) time.')
+        print(f'Depending on available hardware and parallel execution, exhaustive processing could take a long time.')
+        print(f'Order of magnitude run time is {str(timedelta(seconds=runtime))} divided by the number of cores. ')
         print(f'Processing time can be reduced by reducing the number of glasses available for each group.')
-        print(f'One approach is to first drastically narrow down the glass selections for each group.')
+        print(f'One approach is to first drastically narrow down the glass selections for each group in turn.')
         print(f'Intermediate results (if any) will be stored in files, name starting {self.filename} with suitable extension.')
         # Record all other information in the instance
         #
