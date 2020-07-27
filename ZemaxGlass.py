@@ -777,19 +777,22 @@ class ZemaxGlassLibrary(object):
             return 'Library is empty.'
         # Want to print in alphabetical order of catalogs and glasses
         cats, glss = zip(*sorted(zip(cat, gls)))
+        glass_count = 0
         previous_cat = ''
         print_str = ''
         for cat, gls in zip(cats, glss):
             if cat != previous_cat:
-                print_str += f'Catalog : {cat}\n'
+                print_str += f'\nCatalog : {cat} with {len(self.library[cat])} glasses.\n '
                 col_count = 0
             previous_cat = f'{cat}'
             print_str += f'{gls:14s}'
+            glass_count += 1
             if col_count == 8:
                 col_count = 0
-                print_str += '\n'
+                print_str += '\n '
             else:
                 col_count += 1
+        print_str += f'\nTotal number of glasses in library is {glass_count}'
         return print_str
 
     def get_num_glasses(self):
