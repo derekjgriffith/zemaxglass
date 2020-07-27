@@ -609,7 +609,7 @@ class ZemaxGlassLibrary(object):
                     'Sellmeier 5', 'Extended 2', 'Extended 3']
 
     def __init__(self, dir=None, wavemin=400.0, wavemax=700.0, nwaves=300, catalog='all', glass_match='.*', glass_exclude='a^',
-                sampling_domain='wavelength', degree=3, discard_off_band=False, select_status=None, 
+                sampling_domain='wavelength', degree=3, discard_off_band=True, select_status=None, 
                 air_index_function='kohl', debug=False):
         '''
         Initialize the glass library object.
