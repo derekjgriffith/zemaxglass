@@ -3318,6 +3318,59 @@ class GlassCombo(object):
         '''
         dask_client.shutdown()
 
+    def plot_combo_usingDataFrame(self, df, df_col_names, x_parm='vd', y_parm='nd'):
+        '''
+        Plot a diagram using a closed polygon for a set of glass combinations
+        defined by stated columns in the rows of a dataframe. This dataframe would
+        typically be the result of a de Albuquerque run.
+
+        Parameters
+        ----------
+        df : pandas dataframe
+            The dataframe should have at least two pairs of columns with glass catalog
+            and glass names in the columns given in the 'df_cat_glt_cols' input.
+        df_col_names : list of 2-tuples of str
+            The names of the catalog and glass columns from which to extract the 
+            data from the dataframe.
+        x_parm : str
+            The name of the x-axis parameter to plot. Default is 'vd', the abbe number.
+        y_parm : str
+            The name of the y-axis parameter to plot. Default is 'nd', the d-line
+            refractive index.
+        
+        Returns
+        -------
+
+        '''
+        from adjustText import adjust_text
+        # Get a merged glass library
+        gls_lib = copy.deepcopy(self.gls_lib_per_grp[0])
+        for i_grp in range(1, self.num_grp):
+            gls_lib.merge(self.gls_lib_per_grp[i_grp], inplace=True)
+        # For each line in the dataframe plot a closed polygon
+        all_x = []
+        all_y = []
+        all_gls = []
+        for _, row in df.iterrows():
+            x_vals = []
+            y_vals = []
+            for cat_col, gls_col in df_col_names:
+                x_vals.append(gls_lib.library[row[cat_col]][row[gls_col]][x_parm])
+                y_vals.append(gls_lib.library[row[cat_col]][row[gls_col]][y_parm])
+                if row[gls_col] not in all_gls:
+                    all_gls.append(row[gls_col])
+                    all_x.append(gls_lib.library[row[cat_col]][row[gls_col]][x_parm])
+                    all_y.append(gls_lib.library[row[cat_col]][row[gls_col]][y_parm])
+            x_vals.append(x_vals[0])  # To plot a closed polygon
+            y_vals.append(y_vals[0])
+            plt.plot(x_vals, y_vals)
+        # Do the labels
+        plt.xlabel(x_parm)
+        plt.ylabel(y_parm)
+        labels = [plt.text(all_x[i], all_y[i], all_gls[i], ha='center', va='center') for i in range(len(all_x))]
+        # Optimise positioning
+        adjust_text(labels)        
+
 
 #=======================================
 # End of GlassCombo class
