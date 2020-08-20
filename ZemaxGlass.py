@@ -2690,7 +2690,8 @@ class GlassCombo(object):
     """
     def __init__(self, wv, i_wv_0, gls_lib_per_grp, k_gls_per_grp, weight_per_grp, efl,
                     buchdahl_alpha=np.nan, sum_abs_pow_limit=10.0, max_result_rows=1048576,
-                    do_opto_therm=True, temp_lo=20.0, temp_hi=21.0, pressure_env=101330.0, 
+                    do_opto_therm=True, temp_lo=20.0, temp_hi=21.0, pressure_env=101330.0,
+                    max_delta_f=0.1,
                     show_progress=False, parallel=True, upstream=None):
 
         '''
@@ -2796,11 +2797,16 @@ class GlassCombo(object):
             on all available processors. The load balancing may not be
             ideal, but substantial speedup should occur. Default True.
             Note that this feature uses the dask.distributed Python module.
-        upstream : pandas dataframe
+        upstream : GlassCombo object
             Upstream glass combinations to be included in the search for
-            optimal downstream glass combinations. Each row in the upstream
-            pandas dataframe is an upstream glass combination to be tested
-            against all possible downstream glass combinations.
+            optimal downstream glass combinations. The best glass combination
+            results are used as good candidate upstream glass combinations
+            The GlassCombo passed in as upstream, must have selected best results
+            stored in the attribute best_gls_combos_df.
+            Default is None, in which case there will be no upstream glass
+            combos targeted for residual chromatic or thermo-chromatic
+            correction.
+
         '''
 
         # Perform a few simple checks
@@ -2818,8 +2824,13 @@ class GlassCombo(object):
         for i_grp, glass_lib in enumerate(gls_lib_per_grp):
             num_gls_per_grp[i_grp] = glass_lib.get_num_glasses()
             comb_per_grp[i_grp] = combinations(num_gls_per_grp[i_grp], k_gls_per_grp[i_grp])
-        # This is the cartesian product of the combinations for each group, could be very large
-        self.total_combinations = np.array(comb_per_grp, dtype=np.int64).prod()
+        # Deal with upstream glass combos
+        if upstream is not None:
+            self.process_upstream_combos(upstream)
+            self.total_combinations = np.array(comb_per_grp, dtype=np.int64).prod() * self.n_upstream_combos
+        else:
+            # This is the cartesian product of the combinations for each group, could be very large
+            self.total_combinations = np.array(comb_per_grp, dtype=np.int64).prod()
         # Gentle reminder to the user about the number of combinations they could be up against
         self.filename = datetime.now().strftime('%Y%m%d-%H%M%S')
         runtime = int(self.total_combinations//5000)
@@ -2843,6 +2854,7 @@ class GlassCombo(object):
             raise ValueError('Total number of glasses to choose must be at least 2.')
         self.gls_lib_per_grp = gls_lib_per_grp
         self.weight_per_grp = weight_per_grp
+        self.max_delta_f = max_delta_f
         self.max_result_rows = max_result_rows
         self.max_result_rows_per_worker = np.nan  # Not yet known, will be computed when client is set up
         self.sum_abs_pow_limit = sum_abs_pow_limit  # Maximum sum of absolute powers per combination (all groups)
@@ -2874,7 +2886,73 @@ class GlassCombo(object):
         self.worker_iterators = None  # These produce the glass combination indices
         # Run statistics, populated after de Albuquerque run completes
         self.last_run_total_results = None
-        self.last_run_percent_max_results = None      
+        self.last_run_percent_max_results = None
+        # The following attribute is used to store best glass combo results for
+        # this instance. The attribute is populated using 
+        self.best_gls_combos_df = None
+  
+    def process_upstream_combos(self, upstream):
+        '''
+        Process the upstream GlassCombo instance, mainly to extract the relevant upstream
+        residuals.
+
+        Parameters
+        ----------
+        upstream : instance of GlassCombo 
+            This GlassCombo upstream input represents the best results from a previous
+            glass combination search. It must have the best_gls_combo_df attribute
+        '''
+        # Run through groups and set up the column names 
+        for i_grp in range(upstream.num_grp):
+            weight = upstream.weight_per_grp[i_grp]
+            j_gls = 0
+            for k_gls in range(upstream.k_gls_per_grp[i_grp]):
+                j_gls += 1
+                cat_col = f'c{j_gls}'
+                gls_col = f'g{j_gls}'
+                pow_col = f'p{j_gls}'
+                wgt_col = f'w{j_gls}'
+                print(cat_col, gls_col, pow_col)
+                # Iterate over the rows of the dataframe
+                for _, combo_row in upstream.best_gls_combos_df.iterrows():
+                    print(combo_row[cat_col], combo_row[gls_col], combo_row[pow_col])
+        self.n_upstream_combos = len(upstream.best_gls_combos_df)
+
+    def save_best_combos(self, best_gls_combos_df):
+        '''
+        Saves the best glass combinations for later use, most importantly as good upstream 
+        glass combinations for a new GlassCombo object that will continue with the downstream
+        glass combination search. This should be a filtered and relatively short dataframe
+        of glass combinations returned for the search executed on THIS instance of the
+        GlassCombo class.
+
+        Parameters
+        ----------
+        best_gls_combos_df : pandas dataframe of glass combinations
+            This is a dataframe of the kind returned by run_de_albuquerque() method.
+            It must include columns cn, gn, pn, where n is an integer starting at 1.
+            These columns are respectively the catalog, glass and absolute power
+            of the glass
+        '''
+        # Save the best candidates and calculate weights and residuals
+        # Extract mandatory columns, adding weight column
+        self.best_gls_combos_df = pd.DataFrame()
+        n_best_gls_combos = len(best_gls_combos_df)
+        j_gls = 0
+        for i_grp in range(self.num_grp):
+            weight = self.weight_per_grp[i_grp]
+            for _ in range(self.k_gls_per_grp[i_grp]):
+                j_gls += 1
+                cat_col = f'c{j_gls}'
+                gls_col = f'g{j_gls}'
+                pow_col = f'p{j_gls}'
+                wgt_col = f'w{j_gls}'
+                self.best_gls_combos_df[cat_col] = best_gls_combos_df[cat_col]
+                self.best_gls_combos_df[gls_col] = best_gls_combos_df[gls_col]
+                self.best_gls_combos_df[pow_col] = best_gls_combos_df[pow_col]
+                self.best_gls_combos_df[wgt_col] = [weight] * n_best_gls_combos
+        self.n_best_gls_combos = n_best_gls_combos 
+ 
 
     def calc_big_s_bar(self):
         '''
@@ -3210,6 +3288,136 @@ class GlassCombo(object):
                 big_gamma.append(self.weight_per_grp[i_grp] * self.gamma_per_grp[i_grp][i_gls]) 
         return np.array(big_gamma)
 
+    def dask_run_worker_with_upstream(self, i_worker):
+        '''
+        Run the de Albuquerque method on a range of group/glass combinations produced by
+        an iterator. This is where the heavy computation is performed.
+        This version of the worker will include upstream glass combination
+        residual targeting.
+
+        Returns
+        -------
+        A pandas or dask dataframe of results.
+        '''        
+        # Allocate output space for the maximum number of results per worker for this run
+        # It should be (or become) possible to call this again for another set of results,
+        # provided that the worker_iterators are not reset.
+
+        combo_index_range = self.comb_ind_worker_ranges[i_worker]  # 2-tuple of start end combo indices
+        worker_iterator_max_combo = gen_combination(combo_index_range[0], combo_index_range[1], 
+                                            range(self.num_gls_per_grp[self.i_grp_max_combo]),
+                                            self.k_gls_per_grp[self.i_grp_max_combo])
+        max_combo_per_worker = self.comb_ind_worker_splits[i_worker]  # gets multiplied by unsplit group combos
+        # For each worker build a cartesian product iterator across lens groups
+        grp_iterators = [None]*self.num_grp
+
+        for i_grp in range(self.num_grp):
+            # print(f'Producing Iterator for Group # {i_grp}')                
+            if i_grp == self.i_grp_max_combo:
+                grp_iterators[i_grp] = worker_iterator_max_combo
+            else:
+                # This is an ordinary (unsplit) iterator over combinations for the lens group
+                max_combo_per_worker *= self.comb_per_grp[i_grp]
+                grp_iterators[i_grp] = itertools.combinations(range(self.num_gls_per_grp[i_grp]),
+                                                self.k_gls_per_grp[i_grp])
+        worker_iterator = itertools.product(*grp_iterators)  # Cartesian product of iterators
+        # Calculate the target optical power for this run, this will be the first element in vector e_bar
+        big_phi_0 = 1000.0 / self.efl  # dioptre, because efl assumed to be in mm
+        e_bar = self.e_hat * big_phi_0  # target vector
+        # Calculate size of arrays to initialise for storage, limited to max_combo_per_worker
+        max_i_combo = min(self.max_result_rows_per_worker, max_combo_per_worker)
+        abso_pow = np.zeros((max_i_combo, self.k_gls))  # Absolute powers assigned to each glass for best correction
+        sum_abs_norm_pow = np.zeros(max_i_combo)  # Summation of the absolute normalised glass powers for a combo
+        norm_chroma_pow_delta = np.zeros(max_i_combo)  # Modulus of the normalised chromatic power shift F_2 = |CCP|
+        therm_power_rate = np.zeros(max_i_combo)  # Rate of change of total optical power with temperature
+        delta_temp_F = np.zeros(max_i_combo)  # Total absolute focal shift over temperature range delta_temp
+        delta_color_F = np.zeros(max_i_combo)  # Absolute focal shift over wavelength |CCP| * F
+        delta_F = np.zeros(max_i_combo)  # RSS delta_temp_F and delta_color_F        
+        worker_gls = []  # Accumulate the glasses in the main loop(s)
+        worker_cat = []  # Accumulate corresponding glass catalogues in the main loop(s)
+        # combos = []  # Will also grow a list of the combos processed, waste of time and memory?
+        # Loop over the iterator until the maximum number of combinations results is obtained
+        # Or the interator is exhausted
+        i_combo = 0  # This counts the number of glass combinations processed by this worker in this run
+        combos_all_done = True  # Will be set False later if not all done
+        for combo in worker_iterator:
+            # combos.append(combo)
+            # Build the big_h_bar matrix, one column per glass, weighted, also obtain catalogs and glasses
+            combo_cat, combo_gls, big_h_bar = self.build_big_h_bar(combo)
+            # Build row vector of weighted opto-thermal coefficients for glasses in combo
+            big_gamma_gls = self.build_big_gamma(combo)  # Length is total glasses per combo
+            # Calculate the big_g_bar matrix
+            big_g_bar = np.vstack((self.big_w_bar, np.matmul(self.delta_omega_bar, big_h_bar)))
+            # Calculate the determinat of big_g_bar * transpose(big_g_bar)
+            # The glass combination is sometimes degenerate because one or more
+            # glasses in the combo are identical or nearly so
+            determinant = np.linalg.det(np.matmul(big_g_bar.T, big_g_bar))
+            # Ditch this combination if the determinant is zero - bad combo
+            if determinant == 0.0:
+                continue         
+            # Calculate the mashup of the big_g_bar matrix, much happens in this line
+            big_g_bar_mash = np.matmul(np.linalg.inv(np.matmul(big_g_bar.T, big_g_bar)), big_g_bar.T)
+            # Now run through all upstream combos with this downstream combo
+            for upstream_combo in self.upstream_combos:
+                # Set up the e_bar target vector
+
+                # Calculate the big_phi_bar matrix (optimal dioptre powers per glass)
+                big_phi_bar = np.matmul(big_g_bar_mash, e_bar)
+                # Calculate the chromatic change of absolute (dioptre) power per wavelength 
+                # These are the chromatic residuals, absolute power version of vector called CCP by de Albuquerque
+                chroma_power_delta = np.matmul(self.delta_omega_bar, np.matmul(big_h_bar, big_phi_bar))
+                # Calculate the chromatic focal shift by multiplying by the effective focal length (mm)
+                delta_color_F[i_combo] = np.linalg.norm(-self.efl**2.0 * chroma_power_delta/1.0e3)  # Effectively |CCP| * F
+                # Save the data, chromatic focal shift, power distributions
+                abso_pow[i_combo, :] = big_phi_bar.T  # Record the absolute (dioptre) power for the 3-glass combo            
+                # If the sum of absolute normalised powers exceeds threshold
+                # abort further processing and don't record the result
+                sum_abs_norm_pow[i_combo] = np.abs(abso_pow[i_combo, :]/big_phi_0).sum()
+                if sum_abs_norm_pow[i_combo] > self.sum_abs_pow_limit:
+                    continue
+                # Focus shift over whole temperature range in mm (if EFL is in mm)
+                delta_temp_F[i_combo] = - self.efl**2.0 * self.delta_temp * (big_phi_bar.T * big_gamma_gls).sum() / 1.0e3
+                # RSS chromatic and opto-thermal focus shifts
+                delta_F[i_combo] = np.sqrt(delta_temp_F[i_combo]**2.0 + delta_color_F[i_combo]**2.0)
+                norm_chroma_pow_delta[i_combo] = np.linalg.norm(chroma_power_delta)  # |CCP|                       
+                # Record cats and glass for the combo if past this point          
+                worker_cat.append(combo_cat)
+                worker_gls.append(combo_gls)               
+                # If the maximum number of rows has been reached, stop and return results
+                i_combo += 1
+                if i_combo == max_i_combo:
+                    combos_all_done = False  # Never got through all combinations, so coverage is incomplete
+                    break
+        # Build dataframe of all relevant results
+        # Build dataframe column names for glasses and catalogs
+        gls_df_cols = [f'g{i_gls+1}' for i_gls in range(self.k_gls)]
+        cat_df_cols = [f'c{i_gls+1}' for i_gls in range(self.k_gls)]
+        cat_df = pd.DataFrame(worker_cat, dtype='category')
+        cat_df.columns = cat_df_cols        
+        gls_df = pd.DataFrame(worker_gls, dtype='category')
+        gls_df.columns = gls_df_cols
+        cat_gls_df = pd.concat([cat_df, gls_df], axis=1)
+        abs_pow_cols = [f'p{i_gls+1}' for i_gls in range(self.k_gls)]
+        abs_pow_df = pd.DataFrame(abso_pow[0:i_combo, :])
+        abs_pow_df.columns = abs_pow_cols
+        worker_dataframe = pd.concat([cat_gls_df, abs_pow_df], axis=1)
+        # At this point reorder the columns so that the power values are interleaved
+        # with the catalog/glass columns
+        cat_gls_pow_cols = []
+        for i_gls in range(self.k_gls):
+            cat_gls_pow_cols.extend([f'c{i_gls+1}', f'g{i_gls+1}', f'p{i_gls+1}'])
+        worker_dataframe = worker_dataframe[cat_gls_pow_cols]
+        # Add the sum of normalised powers
+        worker_dataframe['f_1'] = sum_abs_norm_pow[0:i_combo]
+        # Add the norm of the |CCP| * efl
+        worker_dataframe['f_2'] = delta_color_F[0:i_combo]
+        # Skip de Albuquerque F3, which is sum of some aberration residuals in aplanatic arrangement
+        # Add the absolute thermal change in focus over the full delta_temp
+        worker_dataframe['f_4'] = delta_temp_F[0:i_combo]
+        # Any dataframe metadat/attributes
+        worker_dataframe.attrs['combos_all_done'] = combos_all_done
+        return worker_dataframe
+
     def dask_run_worker(self, i_worker):
         '''
         Run the de Albuquerque method on a range of group/glass combinations produced by
@@ -3282,10 +3490,10 @@ class GlassCombo(object):
             # Calculate the chromatic change of absolute (dioptre) power per wavelength 
             # These are the chromatic residuals, absolute power version of vector called CCP by de Albuquerque
             chroma_power_delta = np.matmul(self.delta_omega_bar, np.matmul(big_h_bar, big_phi_bar))
-            # Calculate the chromatic focal shift by multiplying by the effective focal length (mm)
+            # Calculate the chromatic focal shift by multiplying by the square of the effective focal length (mm)
             delta_color_F[i_combo] = np.linalg.norm(-self.efl**2.0 * chroma_power_delta/1.0e3)  # Effectively |CCP| * F
             # Save the data, chromatic focal shift, power distributions
-            abso_pow[i_combo, :] = big_phi_bar.T  # Record the absolute (dioptre) power for the 3-glass combo            
+            abso_pow[i_combo, :] = big_phi_bar.T  # Record the absolute (dioptre) power for the combo            
             # If the sum of absolute normalised powers exceeds threshold
             # abort further processing and don't record the result
             sum_abs_norm_pow[i_combo] = np.abs(abso_pow[i_combo, :]/big_phi_0).sum()
@@ -3295,6 +3503,8 @@ class GlassCombo(object):
             delta_temp_F[i_combo] = - self.efl**2.0 * self.delta_temp * (big_phi_bar.T * big_gamma_gls).sum() / 1.0e3
             # RSS chromatic and opto-thermal focus shifts
             delta_F[i_combo] = np.sqrt(delta_temp_F[i_combo]**2.0 + delta_color_F[i_combo]**2.0)
+            if delta_F[i_combo] > self.max_delta_f:
+                continue
             norm_chroma_pow_delta[i_combo] = np.linalg.norm(chroma_power_delta)  # |CCP|                       
             # Record cats and glass for the combo if past this point          
             worker_cat.append(combo_cat)
@@ -3304,6 +3514,8 @@ class GlassCombo(object):
             if i_combo == max_i_combo:
                 combos_all_done = False  # Never got through all combinations, so coverage is incomplete
                 break
+        if i_combo == 0:
+            return   # This worker found nothing within the ambit of the search
         # Build dataframe of all relevant results
         # Build dataframe column names for glasses and catalogs
         gls_df_cols = [f'g{i_gls+1}' for i_gls in range(self.k_gls)]
@@ -3330,6 +3542,7 @@ class GlassCombo(object):
         # Skip de Albuquerque F3, which is sum of some aberration residuals in aplanatic arrangement
         # Add the absolute thermal change in focus over the full delta_temp
         worker_dataframe['f_4'] = delta_temp_F[0:i_combo]
+        worker_dataframe['f_5'] = delta_F[0:i_combo]
         # Any dataframe metadat/attributes
         worker_dataframe.attrs['combos_all_done'] = combos_all_done
         return worker_dataframe
@@ -3352,13 +3565,16 @@ class GlassCombo(object):
             self.dask_futures.append(future)
         # Now wait for workers to complete and gather results
         result_dataframes = dask_client.gather(self.dask_futures)
-        total_results = sum([len(result_df) for result_df in result_dataframes])
+        total_results = sum([len(result_df) for result_df in result_dataframes if result_df is not None])
         # Calculate and print a few run statistics
         self.last_run_total_results = total_results
         self.last_run_percent_max_results = 100.0 * total_results/self.max_result_rows
         print(f'Total number of result rows is {total_results}.')
         print(f'Percentage of maximum allowed results is {self.last_run_percent_max_results:.2f}%.')
-        return pd.concat(result_dataframes, axis=0).reset_index(drop=True)
+        if total_results > 0:
+            return pd.concat(result_dataframes, axis=0).reset_index(drop=True)
+        else:
+            return None
 
     def dask_produce_iterators(self, dask_client):
         '''
@@ -3460,19 +3676,6 @@ class GlassCombo(object):
         labels = [plt.text(all_x[i], all_y[i], all_gls[i], ha='center', va='center') for i in range(len(all_x))]
         # Optimise positioning
         adjust_text(labels)
-
-    def define_upstream_combos(self, upstream_df):
-        '''
-        Define upstream glass combinations using a dataframe, typically one returned by a previous
-        search and filtered according to certain criteria. Each row in the dataframe defines
-        one candidate upstream combination. 
-
-        This method uses attributes of self to build the required data structures defining the
-        upstream combinations, including glass catalogue and type, absolute power (dioptre) and
-        weight.
-        '''
-        pass
-
 
 #=======================================
 # End of GlassCombo class
