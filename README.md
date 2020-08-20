@@ -7,7 +7,7 @@ For instructions and examples on how to use the code, see the user guide PDF.
 
 Notebooks
 =========
-Jupyter notebooks illustrating usage are provided in the Notebooks folder. However, the notebooks are distributed in markdown (.md) format and the [Juptext](https://jupytext.readthedocs.io/en/latest/install.html) package must be installed to read them and convert to .ipynb format.
+Jupyter notebooks illustrating usage are provided in the Notebooks folder. However, the notebooks are distributed in markdown (.md) format and the [Jupytext](https://jupytext.readthedocs.io/en/latest/install.html) package must be installed to read them and convert to .ipynb format.
 
 Other Requirements
 ==================
