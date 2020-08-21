@@ -97,5 +97,11 @@ display(nearest_gls_b.head(10))  # Print 10 nearest
 ```
 
 ```python
+# Add the n_d and opto-thermal coefficient to one of these tables
+gls_lib.supplement_df(nearest_gls_a, ['nd', 'opto_therm_coeff'], inplace=True)
+display(nearest_gls_a.head(20))
+```
+
+```python
 
 ```
