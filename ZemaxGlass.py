@@ -3047,6 +3047,13 @@ class GlassCombo(object):
                 self.best_gls_combos_df[gls_col] = best_gls_combos_df[gls_col]
                 self.best_gls_combos_df[pow_col] = best_gls_combos_df[pow_col]
                 self.best_gls_combos_df[wgt_col] = [weight] * n_best_gls_combos
+        # Now calculate the chromatic and opto-thermal residuals
+        # First assign the matrices, per combo
+        best_gls_combo_chroma_residuals = np.zeros()
+        best_gls_combo_thermop_residual = np.zeros()
+        for idx, combo in self.best_gls_combos.iterrows():
+            # Reconstruct the combo list
+            pass
         self.n_best_gls_combos = n_best_gls_combos 
  
 
@@ -3559,13 +3566,12 @@ class GlassCombo(object):
         delta_F = np.zeros(max_i_combo)  # RSS delta_temp_F and delta_color_F        
         worker_gls = []  # Accumulate the glasses in the main loop(s)
         worker_cat = []  # Accumulate corresponding glass catalogues in the main loop(s)
-        # combos = []  # Will also grow a list of the combos processed, waste of time and memory?
+        combos = []  # Will also grow a list of the combos processed, waste of time and memory?
         # Loop over the iterator until the maximum number of combinations results is obtained
         # Or the interator is exhausted
         i_combo = 0  # This counts the number of glass combinations processed by this worker in this run
         combos_all_done = True  # Will be set False later if not all done
         for combo in worker_iterator:
-            # combos.append(combo)
             # Build the big_h_bar matrix, one column per glass, weighted, also obtain catalogs and glasses
             combo_cat, combo_gls, big_h_bar = self.build_big_h_bar(combo)
             # Build row vector of weighted opto-thermal coefficients for glasses in combo
@@ -3604,7 +3610,8 @@ class GlassCombo(object):
             norm_chroma_pow_delta[i_combo] = np.linalg.norm(chroma_power_delta)  # |CCP|                       
             # Record cats and glass for the combo if past this point          
             worker_cat.append(combo_cat)
-            worker_gls.append(combo_gls)               
+            worker_gls.append(combo_gls)  
+            combos.append(combo)             
             # If the maximum number of rows has been reached, stop and return results
             i_combo += 1
             if i_combo == max_i_combo:
@@ -3614,6 +3621,7 @@ class GlassCombo(object):
             return   # This worker found nothing within the ambit of the search
         # Build dataframe of all relevant results
         # Build dataframe column names for glasses and catalogs
+        combo_series = pd.Series(combos)
         gls_df_cols = [f'g{i_gls+1}' for i_gls in range(self.k_gls)]
         cat_df_cols = [f'c{i_gls+1}' for i_gls in range(self.k_gls)]
         cat_df = pd.DataFrame(worker_cat, dtype='category')
@@ -3639,6 +3647,7 @@ class GlassCombo(object):
         # Add the absolute thermal change in focus over the full delta_temp
         worker_dataframe['f_4'] = delta_temp_F[0:i_combo]
         worker_dataframe['f_5'] = delta_F[0:i_combo]
+        worker_dataframe['combo'] = combo_series
         # Any dataframe metadat/attributes
         worker_dataframe.attrs['combos_all_done'] = combos_all_done
         return worker_dataframe
