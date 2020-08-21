@@ -1860,10 +1860,11 @@ class ZemaxGlassLibrary(object):
             return cat1.flatten()[rank_order], cat2.flatten()[rank_order], \
                glass1.flatten()[rank_order], glass2.flatten()[rank_order], merit.flatten()[rank_order]
     
-    def supplement_df(self, pd_df, fields):
+    def supplement_df(self, pd_df, fields, inplace=True):
         """
         Supplement a pandas dataframe with data from the glass catalog.
         This method will return the pandas dataframe with additional data taken from the glass catalog.
+        The index of the dataframe will be reset if the operation is performed in place.
 
         Parameters
         ----------
@@ -1872,34 +1873,43 @@ class ZemaxGlassLibrary(object):
             column starting with 'gls'.
         fields : list of str
             List of field names to extracted from the glass catalog data. See method asDataFrame() for some examples.
+        inplace : boolean
+            If inplace is True, the dataframe will be modified in place, otherwise a new dataframe will be returned
 
         Returns
         -------
         pd_df : pandas dataframe
             Contains input dataframe extended with requested data from the glass library instance (self).
+            Only returned if inplace is False.
         """
-        # Get the columns
+        if not inplace:
+            pd_df = pd_df.copy()
+        pd_df.reset_index(drop= True, inplace=True)  # Make sure index is reset
+        # Get the columns        
         columns = pd_df.keys()
         for column in columns:
             if column.startswith('cat'):
                 cat_col = column
                 gls_col = 'gls' + cat_col[3:]
-                cats = pd_df[cat_col]
-                glss = pd_df[gls_col]
+                cats = pd_df[cat_col].values
+                glss = pd_df[gls_col].values
+                # print(glss)
                 for field in fields:
                     # Fetch the requested data from the library
                     col_dat = []
                     for i_gls in range(len(glss)):
+                        # print(glss[i_gls], field, self.library[cats[i_gls]][glss[i_gls]][field])
                         col_dat.append(self.library[cats[i_gls]][glss[i_gls]][field])
                     # Add the new column
                     new_col = field + gls_col[3:]
                     if new_col in columns:
                         # Delete column
                         pd_df = pd_df.drop(columns=new_col)
-                    #print('Length '+new_col+'  '+str(len(col_dat)))
-                    #print(col_dat)
+                    # print('Length '+new_col+'  '+str(len(col_dat)))
+                    # print(col_dat)
                     pd_df.insert(loc=len(pd_df.columns), column=new_col, value=col_dat)
-        return pd_df
+        if not inplace:
+            return pd_df
 
     def get_all_cat_gls(self):
         '''
