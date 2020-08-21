@@ -126,11 +126,7 @@ else:
 
 # References
 
-[<a id="cit-Reshidko2013" href="#call-Reshidko2013">1</a>] D. Reshidko and J. Sasián, ``_Method of calculation and tables of optothermal coefficients and thermal diffusivities for glass_'', Optical System Alignment, Tolerancing, and Verification VII,  2013.  [online](https://doi.org/10.1117/12.2036112)
-
-[<a id="cit-Kohlrausch1968" href="#call-Kohlrausch1968">2</a>] F. Kohlrausch, ``_Praktische Physik_'',  1968.
-
-[<a id="cit-SchottTIE29" href="#call-SchottTIE29">1</a>] Schott Advanced Optics, ``TIE-29 Refractive Index and Dispersion'', Schott Inc., number: ,   2016.  [online](https://www.schott.com/d/advanced_optics/02ffdb0d-00a6-408f-84a5-19de56652849/1.2/tie_29_refractive_index_and_dispersion_eng.pdf)
+(<a id="cit-SchottTIE29" href="#call-SchottTIE29">Advanced, 2016</a>) {Schott Advanced, ``TIE-29 Refractive Index and Dispersion'', Schott Inc., number: ,   2016.  [online](https://www.schott.com/d/advanced_optics/02ffdb0d-00a6-408f-84a5-19de56652849/1.2/tie_29_refractive_index_and_dispersion_eng.pdf)
 
 
 
@@ -142,3 +138,7 @@ else:
 \bibliographystyle{unsrt}
 \bibliography{biblio}
 <!-- #endraw -->
+
+```python
+
+```
