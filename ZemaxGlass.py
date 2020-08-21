@@ -681,7 +681,7 @@ class ZemaxGlassLibrary(object):
 
         self.dir = dir
         self.library, self.cat_comment, self.cat_encoding = read_library(dir, catalog=catalog)
-        # Remove glasses where requested wavelength interval is not covered by the valid interval of the dipersion data
+        # Remove glasses where requested wavelength interval is not covered by the valid interval of the dispersion data
         if discard_off_band:
             cat_discard_list = []
             for catalogue in self.library.keys():
@@ -1265,6 +1265,85 @@ class ZemaxGlassLibrary(object):
             self.glasses = glasses
         return
 
+    def find_nearest_gls(self, catalog, glass, criteria=['nd'], percent=False):
+        '''
+        Find the glasses in the library that are nearest to a specified glass.
+        A number of criteria can be specified for the search.
+        Either the absolute or the percentage RMS difference can be used
+        as the sort criterion. 
+
+        Parameters
+        ----------
+        catalog : str
+            Catalog of the specified glass for which to find nearby glasses.
+        glass : str
+            Name of the specified glass for which to find nearby glasses.
+        criteria : list of str
+            Criteria on which to base the search for nearby glasses.
+            The default is ['nd']. The list elements could include the following
+                'nd'  : refractive index at the d line
+                'vd'  : standard abbe dispersion number
+                'tce' : thermal coefficient of expansion (ppm/K)
+                'density' : density in g/cc
+                'dpgf' : catalog relative partial dispersion
+                'opto_therm_coeff' : opto-thermal coefficient, provided that it has
+                    been calculated for all glasses using add_opto-thermal_coeff() method.
+                'n_rel' : will calculate the rms difference in catalog refractive index over
+                    the spectral range defined for the glass library.
+        percent : boolean
+            If True, will sort by the rms percentage difference relative to the
+            values for the specified reference glass/material.
+            If False, sort by the RMS of the absolute difference in the defined
+            values. Default is False (RMS absolute difference in criteria).
+            If only a single criterion is given, there should be virtually no difference
+            in the sort order for percent = True or False.   
+      
+        Returns
+        -------
+        nearest_glss : pandas dataframe
+            Columns of the dataframe are catalog, glass and root-mean-square
+            difference in the specified criteria, as well as the root mean
+            percentage difference.
+        
+        '''
+        cats, glss = self.get_all_cat_gls()  # Get lists of all catalogs and glasses
+        # Find metric vector (columns) for all glasses (rows)
+        criteria_array = np.empty((len(glss), 0), dtype=np.float)
+        ref_crit = np.array([])
+        for criterion in criteria:
+            # Any one criterion could be numtiple columns
+            # The loop over glasses could therefore produce
+            # an array with glasses down rows and criteria across columns
+            criterion_array = np.array([])
+            for cat, gls in zip(cats, glss):
+                # For each glass, build a row vector of values
+                crit_vec = np.array([])
+                if criterion in self.library[cat][gls].keys():
+                    crit_vec = np.array(self.library[cat][gls][criterion])
+                elif criterion == 'n_rel':
+                    # Calculate the refractive indices at the stored wavelengths
+                    _, _, crit_vec = self.get_indices(wv=self.waves, catalog=cat, glass=gls)
+                else:
+                    raise ValueError(f"Unknown criterion string '{criterion}'")
+                if cat == catalog and gls == glass: # This is the reference
+                    ref_crit = np.hstack((ref_crit, crit_vec))
+                if criterion_array.size == 0:
+                    criterion_array = crit_vec
+                else:
+                    criterion_array = np.vstack((criterion_array, crit_vec))
+            criteria_array = np.column_stack((criteria_array, criterion_array))
+        # Find RMS difference between metric vectors
+        if len(ref_crit) == 0:
+            raise ValueError(f'Reference glass/material {glass} in catalogue {catalog} not found.')
+        crit_diff = np.sqrt(((criteria_array - ref_crit)**2.0).mean(axis=1))
+        crit_percent_diff = np.sqrt((((criteria_array - ref_crit)/ref_crit)**2.0).mean(axis=1)) * 100.0
+        if percent:
+            return pd.DataFrame({'cat': cats, 'gls':glss, 'rms_diff': crit_diff, 
+                    'rms_percent_diff': crit_percent_diff}).sort_values(by=['rms_percent_diff'])
+        else:
+            return pd.DataFrame({'cat': cats, 'gls':glss, 'rms_diff': crit_diff, 
+                    'rms_percent_diff': crit_percent_diff}).sort_values(by=['rms_diff'])            
+
     ## =========================
     def get_dispersion(self, glass, catalog, T=None, P=None, save_indices=False):
         '''
@@ -1826,6 +1905,13 @@ class ZemaxGlassLibrary(object):
         '''
         Get pair-wise (same length) lists of all the catalogs and glasses in
         the library.
+
+        Returns
+        -------
+        cat : list of str
+            Catalog names for all glasses in the library.
+        gls : list of str
+            All glass names in the library (same length as cat).
         '''
         cat = []
         gls = []
