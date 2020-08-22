@@ -74,9 +74,14 @@ sumita = zg.ZemaxGlassLibrary(zg.agfdir,
                                      catalog=sumita_catalog, glass_match='K-', glass_exclude='.*(M)',
                                      wavemin=wv_lo, wavemax=wv_hi, degree=10, select_status=[0, 1])
 
+nikon_catalog = 'nikon-hikari_201911'
+nikon = zg.ZemaxGlassLibrary(zg.agfdir, 
+                                     catalog=nikon_catalog, glass_match='J-', # glass_exclude='.*(M)',
+                                     wavemin=wv_lo, wavemax=wv_hi, degree=10, select_status=[0, 1])
+
 # Merge the catalogues into a single library
 gls_lib = ohara.merge(schott, inplace=False).merge(schott_litho, inplace=False).merge(cdgm, 
-                                            inplace=False).merge(sumita, inplace=False)
+                              inplace=False).merge(sumita, inplace=False).merge(nikon, inplace=False)
 gls_lib.abbreviate_cat_names()
 gls_lib.add_opto_thermal_coeff(temp_lo, temp_hi)
 print(gls_lib)
