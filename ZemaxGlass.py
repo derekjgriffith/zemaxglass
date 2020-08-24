@@ -3653,7 +3653,7 @@ class GlassCombo(object):
         # Any dataframe metadat/attributes
         worker_dataframe['chromar'] = chroma_residual[0:i_combo, :].tolist()
         worker_dataframe['thermor'] = therm_optic_residual[0:i_combo]
-        worker_dataframe.attrs['combos_all_done'] = combos_all_done
+        # worker_dataframe.attrs['combos_all_done'] = combos_all_done
         return worker_dataframe
 
     def dask_run_de_albuquerque(self, dask_client):
