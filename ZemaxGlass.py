@@ -2920,22 +2920,6 @@ class GlassCombo(object):
         for i_grp, glass_lib in enumerate(gls_lib_per_grp):
             num_gls_per_grp[i_grp] = glass_lib.get_num_glasses()
             comb_per_grp[i_grp] = combinations(num_gls_per_grp[i_grp], k_gls_per_grp[i_grp])
-        # Deal with upstream glass combos
-        if upstream is not None:
-            self.process_upstream_combos(upstream)
-            self.total_combinations = np.array(comb_per_grp, dtype=np.int64).prod() * self.n_upstream_combos
-        else:
-            # This is the cartesian product of the combinations for each group, could be very large
-            self.total_combinations = np.array(comb_per_grp, dtype=np.int64).prod()
-        # Gentle reminder to the user about the number of combinations they could be up against
-        self.filename = datetime.now().strftime('%Y%m%d-%H%M%S')
-        runtime = int(self.total_combinations//5000)
-        print(f'Take note that the number of potential glass combinations in this instance is {self.total_combinations}.')
-        print(f'Depending on available hardware and parallel execution, exhaustive processing could take a long time.')
-        print(f'Order of magnitude run time is {str(timedelta(seconds=runtime))} divided by the number of cores. ')
-        print(f'Processing time can be reduced by reducing the number of glasses available for each group.')
-        print(f'One approach is to first drastically narrow down the glass selections for each group in turn.')
-        print(f'Intermediate results (if any) will be stored in files, name starting {self.filename} with suitable extension.')
         # Record all other information in the instance
         #
         self.wv = wv
@@ -2984,8 +2968,24 @@ class GlassCombo(object):
         self.last_run_total_results = None
         self.last_run_percent_max_results = None
         # The following attribute is used to store best glass combo results for
-        # this instance. The attribute is populated using 
+        # this instance. The attribute is populated using save_best_gls_combos()
         self.best_gls_combos_df = None
+        # Deal with upstream glass combos
+        if upstream is not None:
+            self.process_upstream_combos(upstream)
+            self.total_combinations = np.array(comb_per_grp, dtype=np.int64).prod() * self.n_upstream_combos
+        else:
+            # This is the cartesian product of the combinations for each group, could be very large
+            self.total_combinations = np.array(comb_per_grp, dtype=np.int64).prod()
+        # Gentle reminder to the user about the number of combinations they could be up against
+        self.filename = datetime.now().strftime('%Y%m%d-%H%M%S')
+        runtime = int(self.total_combinations//5000)
+        print(f'Take note that the number of potential glass combinations in this instance is {self.total_combinations}.')
+        print(f'Depending on available hardware and parallel execution, exhaustive processing could take a long time.')
+        print(f'Order of magnitude run time is {str(timedelta(seconds=runtime))} divided by the number of cores. ')
+        print(f'Processing time can be reduced by reducing the number of glasses available for each group.')
+        print(f'One approach is to first drastically narrow down the glass selections for each group in turn.')
+        print(f'Intermediate results (if any) will be stored in files, name starting {self.filename} with suitable extension.')        
   
     def process_upstream_combos(self, upstream):
         '''
@@ -2998,21 +2998,16 @@ class GlassCombo(object):
             This GlassCombo upstream input represents the best results from a previous
             glass combination search. It must have the best_gls_combo_df attribute
         '''
-        # Run through groups and set up the column names 
-        for i_grp in range(upstream.num_grp):
-            weight = upstream.weight_per_grp[i_grp]
-            j_gls = 0
-            for k_gls in range(upstream.k_gls_per_grp[i_grp]):
-                j_gls += 1
-                cat_col = f'c{j_gls}'
-                gls_col = f'g{j_gls}'
-                pow_col = f'p{j_gls}'
-                wgt_col = f'w{j_gls}'
-                print(cat_col, gls_col, pow_col)
-                # Iterate over the rows of the dataframe
-                for _, combo_row in upstream.best_gls_combos_df.iterrows():
-                    print(combo_row[cat_col], combo_row[gls_col], combo_row[pow_col])
-        self.n_upstream_combos = len(upstream.best_gls_combos_df)
+        # Basic check that at least the wavelengths are the same for this and upstream
+        if upstream.num_wv == self.num_wv:
+            if np.all(upstream.wv == self.wv):
+                pass
+            else:
+                raise ValueError('Upstream combination wavelengths are not the same as for this new GlassCombo instance.')
+        else:
+            raise ValueError('Upstream combination number of wavelengths not the same as for this new GlassCombo instance.')
+        self.upstream_combos_df = upstream.best_gls_combos_df
+        self.n_upstream_combos = len(self.upstream_combos_df)
 
     def save_best_combos(self, best_gls_combos_df):
         '''
