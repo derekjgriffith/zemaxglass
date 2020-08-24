@@ -3022,13 +3022,20 @@ class GlassCombo(object):
         of glass combinations returned for the search executed on THIS instance of the
         GlassCombo class.
 
+        The catalogs,  glasses, absolute (dioptre) powers, weights and chromatic as
+        well as therm-optic residuals will be saved in the self instance.
+
         Parameters
         ----------
         best_gls_combos_df : pandas dataframe of glass combinations
             This is a dataframe of the kind returned by run_de_albuquerque() method.
             It must include columns cn, gn, pn, where n is an integer starting at 1.
             These columns are respectively the catalog, glass and absolute power
-            of the glass
+            of the glass. It must also contain a column "chromar", which are the
+            chromatic residual power deltas with wavelength and the column
+            "thermor" which are the residual thermo-optic coefficients for each the
+            glass combinations (scalar therm-optic rate of power change with
+            temperature).
         '''
         # Save the best candidates and calculate weights and residuals
         # Extract mandatory columns, adding weight column
@@ -3047,13 +3054,9 @@ class GlassCombo(object):
                 self.best_gls_combos_df[gls_col] = best_gls_combos_df[gls_col]
                 self.best_gls_combos_df[pow_col] = best_gls_combos_df[pow_col]
                 self.best_gls_combos_df[wgt_col] = [weight] * n_best_gls_combos
-        # Now calculate the chromatic and opto-thermal residuals
-        # First assign the matrices, per combo
-        best_gls_combo_chroma_residuals = np.zeros()
-        best_gls_combo_thermop_residual = np.zeros()
-        for idx, combo in self.best_gls_combos.iterrows():
-            # Reconstruct the combo list
-            pass
+        # Save the chromatic and thermo-optic residuals
+        self.best_gls_combos_df['chromar'] = best_gls_combos_df['chromar']
+        self.best_gls_combos_df['thermor'] = best_gls_combos_df['thermor']
         self.n_best_gls_combos = n_best_gls_combos 
  
 
@@ -3560,7 +3563,8 @@ class GlassCombo(object):
         abso_pow = np.zeros((max_i_combo, self.k_gls))  # Absolute powers assigned to each glass for best correction
         sum_abs_norm_pow = np.zeros(max_i_combo)  # Summation of the absolute normalised glass powers for a combo
         norm_chroma_pow_delta = np.zeros(max_i_combo)  # Modulus of the normalised chromatic power shift F_2 = |CCP|
-        therm_power_rate = np.zeros(max_i_combo)  # Rate of change of total optical power with temperature
+        therm_optic_residual = np.zeros(max_i_combo)  # Residual rate of change of power with temperature
+        chroma_residual = np.zeros((max_i_combo, self.num_wv-1))  # Chromatic residuals, power difference at wavelength from reference
         delta_temp_F = np.zeros(max_i_combo)  # Total absolute focal shift over temperature range delta_temp
         delta_color_F = np.zeros(max_i_combo)  # Absolute focal shift over wavelength |CCP| * F
         delta_F = np.zeros(max_i_combo)  # RSS delta_temp_F and delta_color_F        
@@ -3602,12 +3606,15 @@ class GlassCombo(object):
             if sum_abs_norm_pow[i_combo] > self.sum_abs_pow_limit:
                 continue
             # Focus shift over whole temperature range in mm (if EFL is in mm)
-            delta_temp_F[i_combo] = - self.efl**2.0 * self.delta_temp * (big_phi_bar.T * big_gamma_gls).sum() / 1.0e3
+            therm_power_rate = np.matmul(big_gamma_gls, big_phi_bar)  # Total rate of power change with temperature
+            delta_temp_F[i_combo] = - self.efl**2.0 * self.delta_temp * therm_power_rate / 1.0e3
             # RSS chromatic and opto-thermal focus shifts
             delta_F[i_combo] = np.sqrt(delta_temp_F[i_combo]**2.0 + delta_color_F[i_combo]**2.0)
             if delta_F[i_combo] > self.max_delta_f:
                 continue
-            norm_chroma_pow_delta[i_combo] = np.linalg.norm(chroma_power_delta)  # |CCP|                       
+            norm_chroma_pow_delta[i_combo] = np.linalg.norm(chroma_power_delta)  # |CCP|
+            chroma_residual[i_combo, :] = chroma_power_delta.T
+            therm_optic_residual[i_combo] = therm_power_rate
             # Record cats and glass for the combo if past this point          
             worker_cat.append(combo_cat)
             worker_gls.append(combo_gls)  
@@ -3621,7 +3628,7 @@ class GlassCombo(object):
             return   # This worker found nothing within the ambit of the search
         # Build dataframe of all relevant results
         # Build dataframe column names for glasses and catalogs
-        combo_series = pd.Series(combos)
+        # combo_series = pd.Series(combos)
         gls_df_cols = [f'g{i_gls+1}' for i_gls in range(self.k_gls)]
         cat_df_cols = [f'c{i_gls+1}' for i_gls in range(self.k_gls)]
         cat_df = pd.DataFrame(worker_cat, dtype='category')
@@ -3647,8 +3654,10 @@ class GlassCombo(object):
         # Add the absolute thermal change in focus over the full delta_temp
         worker_dataframe['f_4'] = delta_temp_F[0:i_combo]
         worker_dataframe['f_5'] = delta_F[0:i_combo]
-        worker_dataframe['combo'] = combo_series
+        # worker_dataframe['combo'] = combo_series
         # Any dataframe metadat/attributes
+        worker_dataframe['chromar'] = chroma_residual[0:i_combo, :].tolist()
+        worker_dataframe['thermor'] = therm_optic_residual[0:i_combo]
         worker_dataframe.attrs['combos_all_done'] = combos_all_done
         return worker_dataframe
 
