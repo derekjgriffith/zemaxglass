@@ -1287,7 +1287,7 @@ class ZemaxGlassLibrary(object):
                 'density' : density in g/cc
                 'dpgf' : catalog relative partial dispersion
                 'opto_therm_coeff' : opto-thermal coefficient, provided that it has
-                    been calculated for all glasses using add_opto-thermal_coeff() method.
+                    been calculated for all glasses using add_opto_thermal_coeff() method.
                 'n_rel' : will calculate the rms difference in catalog refractive index over
                     the spectral range defined for the glass library.
         percent : boolean
@@ -1601,11 +1601,15 @@ class ZemaxGlassLibrary(object):
         # Compute an array of dn/dT using low and high temperature indices
         dndT = (ind_hi - ind_lo) / (temp_hi - temp_lo)
         # Compute opto-thermal coefficients and insert into database
-        for i_gls in range(len(gls_list)):
-            opto_therm_coeff = dndT[i_gls] / (ind_ref[i_gls] - 1.0) - self.library[cat_list[i_gls]][gls_list[i_gls]]['tce']/1.0e6
-            self.library[cat_list[i_gls]][gls_list[i_gls]]['opto_therm_coeff'] = float(opto_therm_coeff)
-            self.library[cat_list[i_gls]][gls_list[i_gls]]['dndT'] = float(dndT[i_gls])
-            self.library[cat_list[i_gls]][gls_list[i_gls]]['n_ref'] = float(ind_ref[i_gls])
+        for i_gls, (cat, gls) in enumerate(zip(cat_list, gls_list)):
+            if ('td' in self.library[cat][gls]) and (sum(self.library[cat][gls]['td'][0:6]) > 0.0):
+                pass
+            else:
+                warnings.warn(f'Therm-optic (TD) data for glass {gls} in catalog {cat} is non-existent or all zero.')
+            opto_therm_coeff = dndT[i_gls] / (ind_ref[i_gls] - 1.0) - self.library[cat][gls]['tce']/1.0e6
+            self.library[cat][gls]['opto_therm_coeff'] = float(opto_therm_coeff)
+            self.library[cat][gls]['dndT'] = float(dndT[i_gls])
+            self.library[cat][gls]['n_ref'] = float(ind_ref[i_gls])
 
     def get_abbe_number(self, wv_centre=wv_d, wv_lo=wv_F, wv_hi=wv_C, catalog=None, glass=None):
         '''
