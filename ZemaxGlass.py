@@ -1614,7 +1614,6 @@ class ZemaxGlassLibrary(object):
                 self.library[cat][gls]['opto_therm_coeff'] = float(opto_therm_coeff)
                 self.library[cat][gls]['dndT'] = float(dndT[i_gls])
             else:
-                warnings.warn(f'Therm-optic (TD) data for glass {gls} in catalog {cat} is non-existent or all zero.')
                 if delete_no_td:  # User requested deletion of any glasses without thermal data for refractive index
                     del_cat.append(cat)
                     del_gls.append(gls)
@@ -1623,6 +1622,8 @@ class ZemaxGlassLibrary(object):
                     self.library[cat][gls]['dndT'] = np.nan
         # Delete any glasses without thermal data if requested
         if delete_no_td:
+            print(f'The following {len(del_gls)} glasses were deleted because they have no thermal data TD.')
+            print(del_gls)
             for (gls, cat) in zip(del_gls, del_cat):
                 del self.library[cat][gls]
             # If any catalogue is now empty, discard entirely
