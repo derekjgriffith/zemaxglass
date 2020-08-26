@@ -1621,7 +1621,7 @@ class ZemaxGlassLibrary(object):
                     self.library[cat][gls]['opto_therm_coeff'] = np.nan
                     self.library[cat][gls]['dndT'] = np.nan
         # Delete any glasses without thermal data if requested
-        if delete_no_td:
+        if delete_no_td and del_gls:
             print(f'The following {len(del_gls)} glasses were deleted because they have no thermal data TD.')
             print([f'{cat} {gls}' for cat, gls in zip(del_cat, del_gls)])
             for (gls, cat) in zip(del_gls, del_cat):
@@ -3136,10 +3136,17 @@ class GlassCombo(object):
         processed could be different. This process uses the order
         in which they were last returned to self.cat_per_grp and
         self.gls_per_grp.
+
+        Note that glasses without thermal data will be retained, but with
+        dndT and the opto-thermal coefficient set to Nan. If these glasses
+        are to be deleted, this must be done BEFORE passing the libraries to
+        the GlassCombo constructor.
+
         '''
         gamma_per_grp = [np.array([])]*self.num_grp
         for i_grp in range(self.num_grp):
-            self.gls_lib_per_grp[i_grp].add_opto_thermal_coeff(self.temp_lo, self.temp_hi, self.wv_0, self.pressure_env)
+            self.gls_lib_per_grp[i_grp].add_opto_thermal_coeff(self.temp_lo, self.temp_hi, self.wv_0, 
+                                                        self.pressure_env, delete_no_td=False)
             for cat, gls in zip(self.cat_per_grp[i_grp], self.gls_per_grp[i_grp]):
                 gamma_per_grp[i_grp] = np.append(gamma_per_grp[i_grp], 
                                     self.gls_lib_per_grp[i_grp].library[cat][gls]['opto_therm_coeff'])
