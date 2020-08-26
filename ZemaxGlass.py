@@ -1565,7 +1565,7 @@ class ZemaxGlassLibrary(object):
         
         return catalog_list, glass_list, indices
 
-    def add_opto_thermal_coeff(self, temp_lo, temp_hi, wv_ref=wv_d, pressure_env=101330.0):
+    def add_opto_thermal_coeff(self, temp_lo, temp_hi, wv_ref=wv_d, pressure_env=101330.0, delete_no_td=True):
         '''
         Compute the opto-thermal coefficients for all glasses in the library for a particular temperature range.
         The glass must have TD temperature data for the opto-thermal coefficient to be valid, as well as a
@@ -1586,7 +1586,11 @@ class ZemaxGlassLibrary(object):
         pressure_env : float
             Air pressure for calculation of opto-thermal constants.
             Default is 101330 Pa, the Schott catalog reference.
-            To calculate absolute opto-thermal coefficents, set pressure_env=0.0 (vacuum).            
+            To calculate absolute opto-thermal coefficents, set pressure_env=0.0 (vacuum).
+        delete_no_td : boolean
+            If set True, glasses with no thermal data or all-zero thermal data will be deleted from
+            the library. If set False, such glasses will not be deleted, but the 'dndT' and 'opto_therm_coeff'
+            will be set to Nan.          
         '''
         self.temp_lo = temp_lo
         self.temp_hi = temp_hi
@@ -1600,16 +1604,32 @@ class ZemaxGlassLibrary(object):
         cat_list, gls_list, ind_hi = self.get_indices(wv_ref, T=temp_hi, P=pressure_env)
         # Compute an array of dn/dT using low and high temperature indices
         dndT = (ind_hi - ind_lo) / (temp_hi - temp_lo)
+        del_cat = []
+        del_gls = []
         # Compute opto-thermal coefficients and insert into database
         for i_gls, (cat, gls) in enumerate(zip(cat_list, gls_list)):
-            if ('td' in self.library[cat][gls]) and (sum(self.library[cat][gls]['td'][0:6]) > 0.0):
-                pass
+            self.library[cat][gls]['n_ref'] = float(ind_ref[i_gls])            
+            if ('td' in self.library[cat][gls]) and (sum(map(abs, self.library[cat][gls]['td'][0:6])) > 0.0):
+                opto_therm_coeff = dndT[i_gls] / (ind_ref[i_gls] - 1.0) - self.library[cat][gls]['tce']/1.0e6
+                self.library[cat][gls]['opto_therm_coeff'] = float(opto_therm_coeff)
+                self.library[cat][gls]['dndT'] = float(dndT[i_gls])
             else:
                 warnings.warn(f'Therm-optic (TD) data for glass {gls} in catalog {cat} is non-existent or all zero.')
-            opto_therm_coeff = dndT[i_gls] / (ind_ref[i_gls] - 1.0) - self.library[cat][gls]['tce']/1.0e6
-            self.library[cat][gls]['opto_therm_coeff'] = float(opto_therm_coeff)
-            self.library[cat][gls]['dndT'] = float(dndT[i_gls])
-            self.library[cat][gls]['n_ref'] = float(ind_ref[i_gls])
+                if delete_no_td:  # User requested deletion of any glasses without thermal data for refractive index
+                    del_cat.append([cat])
+                    del_gls.append([gls])
+                else:
+                    self.library[cat][gls]['opto_therm_coeff'] = np.nan
+                    self.library[cat][gls]['dndT'] = np.nan
+        # Delete any glasses without thermal data if requested
+        if delete_no_td:
+            for (gls, cat) in zip(del_gls, del_cat):
+                del self.library[cat][gls]
+            # If any catalogue is now empty, discard entirely
+            for cat in set(del_cat):
+                if not self.library[cat]:
+                    del self.library[cat]                           
+
 
     def get_abbe_number(self, wv_centre=wv_d, wv_lo=wv_F, wv_hi=wv_C, catalog=None, glass=None):
         '''
