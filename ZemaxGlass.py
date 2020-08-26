@@ -1623,7 +1623,7 @@ class ZemaxGlassLibrary(object):
         # Delete any glasses without thermal data if requested
         if delete_no_td:
             print(f'The following {len(del_gls)} glasses were deleted because they have no thermal data TD.')
-            print(del_gls)
+            print([f'{cat} {gls}' for cat, gls in zip(del_cat, del_gls)])
             for (gls, cat) in zip(del_gls, del_cat):
                 del self.library[cat][gls]
             # If any catalogue is now empty, discard entirely
