@@ -1592,12 +1592,18 @@ class ZemaxGlassLibrary(object):
         delete_no_td : boolean
             If set True, glasses with no thermal data or all-zero thermal data will be deleted from
             the library. If set False, such glasses will not be deleted, but the 'dndT' and 'opto_therm_coeff'
-            will be set to Nan.          
+            will be set to Nan. If set to 'strict', glasses which only have the therm-optic D0 coefficient
+            will also be deleted.     
         '''
         self.temp_lo = temp_lo
         self.temp_hi = temp_hi
         self.wv_ref = wv_ref
         self.press_env = pressure_env
+        # Deal with strict removal of glasses with only D0 opto-thermal model coefficient
+        first_td_coeff = 0
+        if delete_no_td == 'strict':
+            delete_no_td = True
+            first_td_coeff = 1
         # Compute refractive indices at the low temperature
         cat_list, gls_list, ind_lo = self.get_indices(wv_ref, T=temp_lo, P=pressure_env)
         # Compute refractive indices at the reference temperature
@@ -1611,7 +1617,7 @@ class ZemaxGlassLibrary(object):
         # Compute opto-thermal coefficients and insert into database
         for i_gls, (cat, gls) in enumerate(zip(cat_list, gls_list)):
             self.library[cat][gls]['n_ref'] = float(ind_ref[i_gls])            
-            if ('td' in self.library[cat][gls]) and (sum(map(abs, self.library[cat][gls]['td'][0:6])) > 0.0):
+            if ('td' in self.library[cat][gls]) and (sum(map(abs, self.library[cat][gls]['td'][first_td_coeff:6])) > 0.0):
                 opto_therm_coeff = dndT[i_gls] / (ind_ref[i_gls] - 1.0) - self.library[cat][gls]['tce']/1.0e6
                 self.library[cat][gls]['opto_therm_coeff'] = float(opto_therm_coeff)
                 self.library[cat][gls]['dndT'] = float(dndT[i_gls])
@@ -1622,9 +1628,9 @@ class ZemaxGlassLibrary(object):
                 else:
                     self.library[cat][gls]['opto_therm_coeff'] = np.nan
                     self.library[cat][gls]['dndT'] = np.nan
-        # Delete any glasses without thermal data if requested
+        # Delete any glasses without adequate thermal data if requested
         if delete_no_td and del_gls:
-            print(f'The following {len(del_gls)} glasses were deleted because they have no thermal data TD.')
+            print(f'The following {len(del_gls)} glasses were deleted because they have inadequate thermal data TD.')
             print([f'{cat} {gls}' for cat, gls in zip(del_cat, del_gls)])
             for (gls, cat) in zip(del_gls, del_cat):
                 del self.library[cat][gls]
