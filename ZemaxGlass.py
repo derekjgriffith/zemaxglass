@@ -1088,7 +1088,7 @@ class ZemaxGlassLibrary(object):
         else:
             print(print_str)
 
-    def write_agf(self, filename, catalog=None, glasses=None, encoding='latin'):
+    def write_agf(self, filename, catalog=None, glasses=None, cat_comment='', encoding='latin'):
         """
         Write a Zemax .agf format glass catalog file for the specified catalogs and glasses.
 
@@ -1123,6 +1123,8 @@ class ZemaxGlassLibrary(object):
             glasses = [glasses]
         success = False
         with open(filename, 'wt', encoding=encoding) as agf_file:
+            if cat_comment:
+                agf_file.write(f'CC {cat_comment}\n')
             for catalog in self.library:
                 if (catalog not in catalogs): continue  # Skip the whole catalog
                 for glassname in self.library[catalog]:
