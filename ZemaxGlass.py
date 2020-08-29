@@ -2918,6 +2918,12 @@ class GlassCombo(object):
             opto-thermal calculations. In deg C. Default 21.0.
         pressure_env : float
             The environmental pressure in Pa. Default 1 atm = 101330.0 Pa.
+        max_delta_f : float
+            The maximum RSS thermo-chromatic defocus to allow during the
+            search. A combination is immediately discarded (as for sum_abs_pow_limit)
+            if the max_delta_f value is exceeded. Setting this too low also
+            has the risk that no results are returned. The default value is
+            np.inf, meaning that all values are accepted.
         show_progress : boolean
             If set True, in an IPython notebook environment, a simple
             text progress bar will be displayed.
