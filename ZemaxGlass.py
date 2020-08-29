@@ -3075,22 +3075,19 @@ class GlassCombo(object):
         # Extract mandatory columns, adding weight column
         self.best_gls_combos_df = pd.DataFrame()
         n_best_gls_combos = len(best_gls_combos_df)
-        j_gls = 0
-        for i_grp in range(self.num_grp):
-            weight = self.weight_per_grp[i_grp]
-            for _ in range(self.k_gls_per_grp[i_grp]):
-                j_gls += 1
-                cat_col = f'c{j_gls}'
-                gls_col = f'g{j_gls}'
-                pow_col = f'p{j_gls}'
-                wgt_col = f'w{j_gls}'
-                self.best_gls_combos_df[cat_col] = best_gls_combos_df[cat_col]
-                self.best_gls_combos_df[gls_col] = best_gls_combos_df[gls_col]
-                self.best_gls_combos_df[pow_col] = best_gls_combos_df[pow_col]
-                self.best_gls_combos_df[wgt_col] = [weight] * n_best_gls_combos
+        n_el = len(best_gls_combos_df.attrs['weights'])
+        # Copy across only the catalog, glass and power, later allso residuals
+        for i_el in range(n_el):
+            self.best_gls_combos_df[f'c{i_el}'] = best_gls_combos_df[f'c{i_el}']
+            self.best_gls_combos_df[f'g{i_el}'] = best_gls_combos_df[f'g{i_el}']
+            self.best_gls_combos_df[f'p{i_el}'] = best_gls_combos_df[f'p{i_el}']
         # Save the chromatic and thermo-optic residuals
         self.best_gls_combos_df['chromar'] = best_gls_combos_df['chromar']
         self.best_gls_combos_df['thermor'] = best_gls_combos_df['thermor']
+        # Save the weights in the attributes rather than in entire columns
+        self.best_gls_combos_df.attrs['weights'] = best_gls_combos_df.attrs['weights']
+        # Also retain knowledge of whether all combos were covered in previous run
+        self.best_gls_combos_df.attrs['combos_all_done'] = best_gls_combos_df.attrs['combos_all_done']
         self.n_best_gls_combos = n_best_gls_combos 
  
 
