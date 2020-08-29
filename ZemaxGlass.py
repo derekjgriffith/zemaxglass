@@ -2051,7 +2051,8 @@ class ZemaxGlassLibrary(object):
         cat_list, glass_list, n_centers = self.get_indices(wv_center, catalog=catalog, glass=glass)
         # Find the most linear alpha value and Buchdahl coefficients (2 or 3)
         for i_glass in range(len(glass_list)):
-            # The following will return a list of float, alpha, nu_1, nu_2 and (if order==3) nu_3
+            # The following will return a list of float, alpha, nu_1, nu_2 and (if order==3) nu_3, NOT recursive
+            # This calls the ZemaxGlass function, not the ZemaxGlassLibrary method (see near top of file)            
             buch_fit = buchdahl_find_alpha(wv, indices[i_glass, :], wv_center, n_centers[i_glass], order=order, gtol=gtol)
             if i_glass == 0:
                 buch_fits = np.array(buch_fit['x'])
@@ -2098,8 +2099,8 @@ class ZemaxGlassLibrary(object):
         glass_list : list of str
             List of glass names, same length as cat_list.
         buch_fits : ndarray of float
-            Buchdahl fit parameters (nu) for the listed glasses, where buch_fits[:, 0] is alpha,
-            buch_fits[:, 1] is nu_1, buch_fits[:, 2] is nu_2 and (if order==3) buch_fits[:, 3] is nu_3
+            Buchdahl fit parameters (nu) for the listed glasses, where 
+            buch_fits[:, 0] is nu_1, buch_fits[:, 1] is nu_2 and (if order==3) buch_fits[:, 2] is nu_3
         n_centers : ndarray of float
             Refractive index at the center (reference) wavelength.
 
@@ -2111,7 +2112,8 @@ class ZemaxGlassLibrary(object):
         cat_list, glass_list, n_centers = self.get_indices(wv_center, catalog=catalog, glass=glass)
         # Find the Buchdahl coefficients (2 or 3), with the given alpha value.
         for i_glass in range(len(glass_list)):
-            # The following will return a list of float, alpha, nu_1, nu_2 and (if order==3) nu_3
+            # The following will return a list of float, alpha, nu_1, nu_2 and (if order==3) nu_3, NOT recursive
+            # This calls the ZemaxGlass function, not the ZemaxGlassLibrary method (see near top of file)
             buch_fit = buchdahl_fit(wv, indices[i_glass, :], wv_center, n_centers[i_glass], alpha=alpha, order=order)
 
             if i_glass == 0:
