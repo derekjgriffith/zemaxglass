@@ -2125,7 +2125,7 @@ class ZemaxGlassLibrary(object):
         return cat_list, glass_list, buch_fits, n_centers
 
     def buchdahl_fit_eta(self, wv, i_wv_ref, alpha, catalog=None, glass=None, 
-                            show_progress=False):
+                            show_progress=False, save=False):
         """
         Find eta coefficients of Buchdahl dispersive power function for the specified glasses and catalogs.
         An appropriate Buchdahl alpha parameter value must be provided.
@@ -2157,6 +2157,9 @@ class ZemaxGlassLibrary(object):
             If set True, shows a simple text progress bar for all the requested glasses.
             Default is False (no progress bar is shown). Only works if IPython is installed.
             Useful for interactive work in notebooks.
+        save : boolean
+            If set True, the eta coefficients will be stored in the glass library (self) as well
+            as returned as below. Default is False.
 
         Returns
         -------
@@ -2200,6 +2203,9 @@ class ZemaxGlassLibrary(object):
                 buch_etas = np.vstack((buch_etas, buch_eta))  # Add result for this glass
             if show_progress and clear_output_possible:
                 update_progress((i_glass + 1.0) / len(glass_list), bar_length=50)
+        if save:
+            for i_gls, (cat, gls) in enumerate(zip(cat_list, glass_list)):
+                self.library[cat][gls]['buch_eta'] = buch_etas[i_gls, :]
         return cat_list, glass_list, buch_etas, n_ref               
 
 
@@ -3097,8 +3103,79 @@ class GlassCombo(object):
         self.best_gls_combos_df.attrs['weights'] = best_gls_combos_df.attrs['weights']
         # Also retain knowledge of whether all combos were covered in previous run
         self.best_gls_combos_df.attrs['combos_all_done'] = best_gls_combos_df.attrs['combos_all_done']
-        self.n_best_gls_combos = n_best_gls_combos 
- 
+        self.n_best_gls_combos = n_best_gls_combos
+
+    def find_nearest_combo(self, ref_combo, ref_gls_lib=None):
+        '''
+        Find a glass combination amongst the best saved for this GlassCombo instance
+        that is the closest to a given (reference) glass combination. The information
+        for the reference combination will include the catalogs, glass names and
+        optical powers for the combination.
+
+        The number of glasses in the reference combination must match in the number
+        of glasses in the saved best combinations for the GlassCombo instance.
+
+        If the reference combination has multiple elements of the same glass, the powers
+        should be added and rolled into a single reference to that material with the
+        combined power.
+
+        The best matching glass combination is based on the Buchdahl dispersive power
+        function eta coefficients. The RSS difference between the Buchdahl eta coefficients
+        multiplied by the glass combination element power is the basis of the 
+
+        Parameters
+        ----------
+        ref_combo : list of 3-tuples (str, str, float)
+            Each 3-tuple must comprise two strings and a float. The first string is
+            the catalog, the second is the glass name and the third element is the
+            power assigned to the glass in dioptres (float).
+        ref_gls_lib : ZemaxGlassLibrary
+            The glass library for the reference combination. Default is None,
+            in which case the glasses in the reference combination are assumed to
+            be in the glass libraries contained in self.
+        '''
+        # Find best match based on Buchdahl eta coefficients
+        if not self.best_gls_combos_df:
+            raise ValueError('This GlassCombo has no saved selected glass combinations.')
+        if len(ref_combo) != len(self.best_gls_combos_df.attrs['weights']):
+            raise ValueError('Reference and comparison glass combinations must have the same number of elements.')
+        # Create a merged glass library
+        merged_gls_lib = copy.deepcopy(self.gls_lib_per_grp[0])  # Start with the group zero glass lib
+        for i_grp in range(1, self.num_grp):  # Merge in glass libraries from remaining groups if any
+            merged_gls_lib.merge(self.gls_lib_per_grp[i_grp], inplace=True)
+        if ref_gls_lib:
+            merged_gls_lib.merge(ref_gls_lib, inplace=True) 
+        # Compute all the eta coefficients and save in the merged glass library
+        cats, glss, etas, n_ref = merged_gls_lib.buchdahl_fit_eta(self.wv, self.i_wv_0, self.buchdahl_alpha,
+                                            show_progress=False, save=True)
+        # cats_glss = [f'{cat}_{gls}' for cat, gls in zip(cats, glss)]
+        # Get the reference eta values
+        ref_eta_pow = []
+        total_power = 0.0
+        for combo_element in ref_combo:
+            cat = combo_element[0]
+            gls = combo_element[1]
+            power = combo_element[2]
+            total_power += power  # Accumulate the total power
+            ref_eta_pow.append([power * eta for eta in merged_gls_lib.library[cat][gls]['buch_eta']])
+        ref_eta_pow = np.array(ref_eta_pow)
+        # Now run through all combinations in the saved best combinations
+        # Record the difference vector length (eta vector times the glass power)
+        eta_pow_diff = []
+        for i_combo, combo in self.best_gls_combos_df.iterrows():
+            eta_pow = []
+            for i_combo_element in len(self.best_gls_combos_df.attrs['weights']):
+                # Get the etas for the glass and multiply by the power
+                cat = combo[f'c{i_combo_element}']
+                gls = combo[f'g{i_combo_element}']
+                power = combo[f'p{i_combo_element}']
+                # Calculate a row vector for this glass in the combination
+                # Product of the power and the eta coefficients.
+                eta_pow_el = power * np.array(merged_gls_lib.library[cat][gls]['buch_eta'])
+                eta_pow.append([power * eta for eta in merged_gls_lib.library[cat][gls]['buch_eta']])
+            eta_pow = np.array(eta_pow)
+            eta_pow_diff.append(eta_pow - ref_eta_pow)
+        return ref_eta_pow
 
     def calc_big_s_bar(self):
         '''
@@ -3218,12 +3295,25 @@ class GlassCombo(object):
         self.omega = buchdahl_omega(self.wv, self.wv_0, self.buchdahl_alpha)
         self.delta_omega_bar = delta_buchdahl_omega_bar(self.omega)        
 
-    def buchdahl_fit_eta(self, show_progress=False):
+    def buchdahl_fit_eta(self, show_progress=False, save=False):
         '''
         Find the Buchdahl eta coefficients for all the glasses in the combo.
         These are the coefficients of the Buchdahl dispersive power function,
         not the dispersion function. The results are computed using the
         ZemaxGlassLibrary.buchdahl_fit_eta() method.
+
+        Parameters
+        ----------
+        show_progress : boolean
+            If set True, will show a progress bar. Usually not required.
+            Default is False
+        save : boolean
+            If set True, the eta coefficients will be stored in the ZemaxGlassLibraries.
+            Default is False.
+
+        Returns
+        -------
+        None, results are stored in self.eta_per_grp
         '''
         self.cat_per_grp = []
         self.gls_per_grp = []
@@ -3233,7 +3323,7 @@ class GlassCombo(object):
             raise ValueError('The Buchdahl alpha parameter must first be set for this combo using buchdahl_find_alpha() or buchdahl_set_alpha().')
         for gls_lib in self.gls_lib_per_grp:
             cat, gls, eta, n_ref = gls_lib.buchdahl_fit_eta(self.wv, self.i_wv_0, alpha=self.buchdahl_alpha,
-                                                                show_progress=show_progress)
+                                                                show_progress=show_progress, save=save)
             self.cat_per_grp.append(cat)
             self.gls_per_grp.append(gls)
             self.eta_per_grp.append(eta)
