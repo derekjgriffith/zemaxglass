@@ -1565,8 +1565,7 @@ class ZemaxGlassLibrary(object):
                 if indices.size > 0:
                     indices = np.vstack((indices, glass_indices))
                 else:
-                    indices = np.atleast_1d(glass_indices)
-        
+                    indices = np.atleast_1d(glass_indices)       
         return catalog_list, glass_list, indices
 
     def add_opto_thermal_coeff(self, temp_lo, temp_hi, wv_ref=wv_d, pressure_env=101330.0, delete_no_td=True):
@@ -2805,6 +2804,53 @@ import itertools
 # Logging for messages and such
 import logging
 
+def make_np_row_permutations(np_2d):
+    '''
+    Returns an array with all permutations of the rows in the depth dimension.
+
+    Parameters
+    ----------
+    np_2d : 2d numpy array
+        Any numpy array with exactly 2 dimensions.
+
+    Returns
+    -------
+    np_permutations : 3d numpy array
+        Row-permuted copies of the input 2d array stacked in the third dimension
+    '''
+    np_shape = list(np_2d.shape)
+    # Get indices of all row permutations
+    row_permutations = list(itertools.permutations(range(np_shape[0])))
+    np_shape.append(len(row_permutations))    
+    np_permutations = np.zeros(np_shape)
+    for i_permutation, permutation in enumerate(row_permutations):
+        np_permutations[:, :, i_permutation] = np_2d[permutation, :]
+    return np_permutations
+
+def make_np_vec_permutations(np_1d):
+    '''
+    Returns a 2d array with all of the permutations of the elements of the row
+    vector, extended into a 2d array.
+
+    Parameters
+    ----------
+    np_1d : numpy row vector
+        Numpy array 1d (row) vector.
+    
+    Returns
+    -------
+    np_permutations : 2d numpy array
+        Element permuted 2d array, where each row is a permutation of the first row.
+    '''
+    n_el = np_1d.size
+    # Generate permutations
+    el_permutations = list(itertools.permutations(range(n_el)))
+    np_shape = [len(el_permutations), n_el]
+    np_permutations = np.zeros(np_shape)
+    for i_permutation, permutation in enumerate(el_permutations):
+        np_permutations[i_permutation, :] = np_1d[np.ix_(permutation)]
+    return np_permutations
+
 class GlassCombo(object):
     """
     GlassCombo is a class for supporting the search for and analysis of glass combinations
@@ -3022,7 +3068,7 @@ class GlassCombo(object):
         # The following attribute is used to store best glass combo results for
         # this instance. The attribute is populated using save_best_gls_combos()
         self.best_gls_combos_df = None
-        # Deal with upstream glass combos
+        # Deal with upstream glass combos, self.weights is all elements (expanded per group)
         self.all_weights = self.weights  # To be prepended with upstream weights (if any)
         if upstream is not None:
             self.process_upstream_combos(upstream)
@@ -3063,6 +3109,8 @@ class GlassCombo(object):
         self.upstream_combos_df = upstream.best_gls_combos_df
         # Create a vector all weights, including upstream weights
         self.all_weights = self.upstream_combos_df.attrs['weights'].extend(self.weights)
+        # Calculate the total raw power per line, including self and upstream
+        # self.raw_power = self.upstream_combos_df.attrs['tot_raw_power'] + 1000.0/self.efl
         self.n_upstream_combos = len(self.upstream_combos_df)
 
     def save_best_combos(self, best_gls_combos_df):
@@ -3093,7 +3141,8 @@ class GlassCombo(object):
         self.best_gls_combos_df = pd.DataFrame()
         n_best_gls_combos = len(best_gls_combos_df)
         n_el = len(best_gls_combos_df.attrs['weights'])
-        # Copy across only the catalog, glass and power, later allso residuals
+        # Copy across only the catalog, glass and power, later also residuals
+        # Will also record the cumulative power per line
         for i_el in range(n_el):
             self.best_gls_combos_df[f'c{i_el}'] = best_gls_combos_df[f'c{i_el}']
             self.best_gls_combos_df[f'g{i_el}'] = best_gls_combos_df[f'g{i_el}']
@@ -3105,9 +3154,11 @@ class GlassCombo(object):
         self.best_gls_combos_df.attrs['weights'] = best_gls_combos_df.attrs['weights']
         # Also retain knowledge of whether all combos were covered in previous run
         self.best_gls_combos_df.attrs['combos_all_done'] = best_gls_combos_df.attrs['combos_all_done']
+        # Reset the index
+        self.best_gls_combos_df = self.best_gls_combos_df.reset_index(drop=True)
         self.n_best_gls_combos = n_best_gls_combos
 
-    def find_nearest_combo(self, ref_combo, ref_gls_lib=None):
+    def find_nearest_combo_buch(self, ref_combo, ref_gls_lib=None):
         '''
         Find a glass combination amongst the best saved for this GlassCombo instance
         that is the closest to a given (reference) glass combination. The information
@@ -3123,7 +3174,11 @@ class GlassCombo(object):
 
         The best matching glass combination is based on the Buchdahl dispersive power
         function eta coefficients. The RSS difference between the Buchdahl eta coefficients
-        multiplied by the glass combination element power is the basis of the 
+        multiplied by the glass combination element power is the basis of the comparison.
+
+        Note that weights are assumed to be the same for each corresponding glass in the
+        reference and candidate alternative combinations, and is therefore not taken into
+        account.
 
         Parameters
         ----------
@@ -3135,9 +3190,19 @@ class GlassCombo(object):
             The glass library for the reference combination. Default is None,
             in which case the glasses in the reference combination are assumed to
             be in the glass libraries contained in self.
+
+        Returns
+        -------
+        proxi_df : pandas DataFrame
+            A DataFrame the same as the best_gls_combos_df, but with an added proximity
+            metric 'f_proxi' indicating the distance between the reference combination
+            and the combinations in the best_gls_combos_df DataFrame. The power values
+            in the returned DataFrame are scaled so that the total power in the 
+            candidate combinations are the same as that in the reference combination.
+
         '''
         # Find best match based on Buchdahl eta coefficients
-        if not self.best_gls_combos_df:
+        if (self.best_gls_combos_df is None):
             raise ValueError('This GlassCombo has no saved selected glass combinations.')
         if len(ref_combo) != len(self.best_gls_combos_df.attrs['weights']):
             raise ValueError('Reference and comparison glass combinations must have the same number of elements.')
@@ -3153,31 +3218,185 @@ class GlassCombo(object):
         # cats_glss = [f'{cat}_{gls}' for cat, gls in zip(cats, glss)]
         # Get the reference eta values
         ref_eta_pow = []
-        total_power = 0.0
+        total_ref_power = 0.0  # Total (unweighted) dioptre power in the reference combination
+        used_glss = []  # Will check that no glasses are duplicated in the reference combo
         for combo_element in ref_combo:
             cat = combo_element[0]
             gls = combo_element[1]
-            power = combo_element[2]
-            total_power += power  # Accumulate the total power
+            cat_gls = f'{cat}_{gls}'
+            if cat_gls in used_glss:
+                raise ValueError('The reference combination has duplicate glasses. This does not make sense.')
+            used_glss.append(cat_gls)
+            power = combo_element[2]            
+            total_ref_power += power  # Accumulate the total absolute (unweighted) power
             ref_eta_pow.append([power * eta for eta in merged_gls_lib.library[cat][gls]['buch_eta']])
         ref_eta_pow = np.array(ref_eta_pow)
+        # Produce all permutations, expanded in the depth direction
+        ref_eta_pow = make_np_row_permutations(ref_eta_pow)
         # Now run through all combinations in the saved best combinations
         # Record the difference vector length (eta vector times the glass power)
         eta_pow_diff = []
+        i_eta_pow_diff = []
+        all_total_candidate_power = np.array([])
         for i_combo, combo in self.best_gls_combos_df.iterrows():
-            eta_pow = []
-            for i_combo_element in len(self.best_gls_combos_df.attrs['weights']):
+            total_candidate_power = 0.0            
+            candidate_eta_pow = []
+            for i_combo_element in range(len(self.best_gls_combos_df.attrs['weights'])):
                 # Get the etas for the glass and multiply by the power
                 cat = combo[f'c{i_combo_element}']
                 gls = combo[f'g{i_combo_element}']
-                power = combo[f'p{i_combo_element}']
-                # Calculate a row vector for this glass in the combination
-                # Product of the power and the eta coefficients.
-                eta_pow_el = power * np.array(merged_gls_lib.library[cat][gls]['buch_eta'])
-                eta_pow.append([power * eta for eta in merged_gls_lib.library[cat][gls]['buch_eta']])
-            eta_pow = np.array(eta_pow)
-            eta_pow_diff.append(eta_pow - ref_eta_pow)
-        return ref_eta_pow
+                power = combo[f'p{i_combo_element}']             
+                total_candidate_power += power
+                candidate_eta_pow.append([power * eta for eta in merged_gls_lib.library[cat][gls]['buch_eta']])
+            all_total_candidate_power = np.hstack((all_total_candidate_power, total_candidate_power))
+            candidate_eta_pow = np.array(candidate_eta_pow)
+            # Now have the candidate eta * power and reference eta power
+            # Scale the candidate eta * power so that total power is the same for reference and candidate
+            candidate_eta_pow *= total_ref_power / total_candidate_power
+            # Subtract the candidate eta * power from the reference
+            # Broadcasting should happen in the 3rd dimension
+            diff_eta_pow = ref_eta_pow - candidate_eta_pow[:, :, np.newaxis]
+            # Now find the (Frobenius) norm in first two axes
+            eta_pow_diff_norm = np.linalg.norm(diff_eta_pow, axis=(0,1))
+            # Number sought is the minimum norm value
+            eta_pow_diff.append(eta_pow_diff_norm.min())
+            # Also record the position, which indicates which permutation is best
+            i_eta_pow_diff.append(eta_pow_diff_norm.argmin())
+        # Calculate the candidate power coefficient of variation as percent
+        all_candidate_power_mean = all_total_candidate_power.mean()
+        all_candidate_power_var = 100.0 * all_total_candidate_power.std() / all_candidate_power_mean
+        if all_candidate_power_var > 5.0:  # More than 5% coefficient of variation
+            warnings.warn('Candidate combinations have more than 5 percent coefficient of variation.')
+        ref_cand_mean_power_ratio = total_ref_power / all_candidate_power_mean       
+        proxi_df = self.best_gls_combos_df.copy()
+        # Scale the powers so that they are the same in total as the reference
+        for i_pow_col in range(len(self.best_gls_combos_df.attrs['weights'])):
+            proxi_df[f'p{i_pow_col}'] *= ref_cand_mean_power_ratio               
+        eta_pow_diff = np.array(eta_pow_diff)
+        proxi_df['f_proxi'] = eta_pow_diff
+        proxi_df.attrs['i_proxi'] = i_eta_pow_diff
+        return proxi_df.sort_values(by='f_proxi')
+
+    def find_nearest_combo_powrin(self, ref_combo, ref_gls_lib=None):
+        '''
+        Find a glass combination amongst the best saved for this GlassCombo instance
+        that is the closest to a given (reference) glass combination. The information
+        for the reference combination will include the catalogs, glass names and
+        optical powers for the combination.
+
+        The number of glasses in the reference combination must match in the number
+        of glasses in the saved best combinations for the GlassCombo instance.
+
+        If the reference combination has multiple elements of the same glass, the powers
+        should be added and rolled into a single reference to that material with the
+        combined power.
+
+        The best matching glass combination here is based on the power of the associated 
+        material divided by (refractive index at the reference wavelength - 1).
+        Note that weights are assumed to be the same for each corresponding glass in the
+        reference and candidate alternative combinations, and is therefore not taken into
+        account.
+
+        Parameters
+        ----------
+        ref_combo : list of 3-tuples (str, str, float)
+            Each 3-tuple must comprise two strings and a float. The first string is
+            the catalog, the second is the glass name and the third element is the
+            power assigned to the glass in dioptres (float).
+        ref_gls_lib : ZemaxGlassLibrary
+            The glass library for the reference combination. Default is None,
+            in which case the glasses in the reference combination are assumed to
+            be in the glass libraries contained in self. The power values
+            in the returned DataFrame are scaled so that the total power in the 
+            candidate combinations are the same as that in the reference combination.
+
+        Returns
+        -------
+        proxi_df : pandas DataFrame
+            A DataFrame the same as the best_gls_combos_df, but with an added proximity
+            metric 'f_proxi' indicating the distance between the reference combination
+            and the combinations in the best_gls_combos_df DataFrame. The proximity
+            metric is based on the ratio of the component powers to the 
+            refractive index at the reference wavelength - 1.
+
+        '''
+        # Find best match based on Buchdahl eta coefficients
+        if (self.best_gls_combos_df is None):
+            raise ValueError('This GlassCombo has no saved selected glass combinations.')
+        if len(ref_combo) != len(self.best_gls_combos_df.attrs['weights']):
+            raise ValueError('Reference and comparison glass combinations must have the same number of elements.')
+        # Create a merged glass library
+        merged_gls_lib = copy.deepcopy(self.gls_lib_per_grp[0])  # Start with the group zero glass lib
+        for i_grp in range(1, self.num_grp):  # Merge in glass libraries from remaining groups if any
+            merged_gls_lib.merge(self.gls_lib_per_grp[i_grp], inplace=True)
+        if ref_gls_lib:
+            merged_gls_lib.merge(ref_gls_lib, inplace=True) 
+        # Compute all the eta coefficients and save in the merged glass library
+        cats, glss, n_ref = merged_gls_lib.get_indices(self.wv[self.i_wv_0])
+        cats_glss = [f'{cat}_{gls}' for cat, gls in zip(cats, glss)]
+        # Get the reference eta values
+        ref_powrin = np.array([])
+        total_ref_power = 0.0  # Total (unweighted) dioptre power in the reference combination
+        used_glss = []  # Will check that no glasses are duplicated in the reference combo
+        for combo_element in ref_combo:
+            cat = combo_element[0]
+            gls = combo_element[1]
+            cat_gls = f'{cat}_{gls}'
+            if cat_gls in used_glss:
+                raise ValueError('The reference combination has duplicate glasses. This does not make sense.')
+            used_glss.append(cat_gls)
+            power = combo_element[2]         
+            total_ref_power += power  # Accumulate the total absolute (unweighted) power
+            powrin = power / (n_ref[cats_glss.index(cat_gls)] - 1.0)
+            ref_powrin = np.hstack((ref_powrin, powrin))
+        # Produce all permutations, expanded as rows
+        ref_powrin = make_np_vec_permutations(ref_powrin)
+        # Now run through all combinations in the saved best combinations
+        # Record the difference vector length (glass power divided by refr_index-1)
+        powrin_diff = []
+        i_powrin_diff = []
+        all_total_candidate_power = np.array([])        
+        for i_combo, combo in self.best_gls_combos_df.iterrows():
+            total_candidate_power = 0.0            
+            candidate_powrin = np.array([])
+            for i_combo_element in range(len(self.best_gls_combos_df.attrs['weights'])):
+                # Get the etas for the glass and multiply by the power
+                cat = combo[f'c{i_combo_element}']
+                gls = combo[f'g{i_combo_element}']
+                cat_gls = f'{cat}_{gls}'                
+                power = combo[f'p{i_combo_element}']             
+                total_candidate_power += power
+                powrin = power / (n_ref[cats_glss.index(cat_gls)] - 1.0)
+                candidate_powrin = np.hstack((candidate_powrin, powrin))
+            all_total_candidate_power = np.hstack((all_total_candidate_power, total_candidate_power))                
+            candidate_powrin = np.array(candidate_powrin)
+            # Now have the candidate power/(n-1) and reference power/(n-1)
+            # Scale the candidate power/(n-1) so that total power is the same for reference and candidate           
+            candidate_powrin *= total_ref_power / total_candidate_power
+            # Subtract the candidate powrin from the reference
+            # Broadcasting should happen in the 3rd dimension
+            diff_powrin= ref_powrin - candidate_powrin[np.newaxis, :]
+            # Now find the (Frobenius) norm in second axis
+            powrin_diff_norm = np.linalg.norm(diff_powrin, axis=1)
+            # Number sought is the minimum norm value
+            powrin_diff.append(powrin_diff_norm.min())
+            # Also record the position, which indicates which permutation is best
+            i_powrin_diff.append(powrin_diff_norm.argmin())
+        # Calculate the candidate power coefficient of variation as percent
+        all_candidate_power_mean = all_total_candidate_power.mean()
+        all_candidate_power_var = 100.0 * all_total_candidate_power.std() / all_candidate_power_mean
+        if all_candidate_power_var > 5.0:  # More than 5% coefficient of variation
+            warnings.warn('Candidate combinations have more than 5 percent coefficient of variation.')
+        ref_cand_mean_power_ratio = total_ref_power / all_candidate_power_mean       
+        powrin_diff = np.array(powrin_diff)
+        proxi_df = self.best_gls_combos_df.copy()
+        # Scale the powers so that they are the same in total as the reference
+        for i_pow_col in range(len(self.best_gls_combos_df.attrs['weights'])):
+            proxi_df[f'p{i_pow_col}'] *= ref_cand_mean_power_ratio      
+        proxi_df['f_proxi'] = powrin_diff
+        proxi_df.attrs['i_proxi'] = i_powrin_diff
+        return proxi_df.sort_values(by='f_proxi')
+
 
     def calc_big_s_bar(self):
         '''
@@ -3824,6 +4043,7 @@ class GlassCombo(object):
         worker_dataframe['chromar'] = chroma_residual[0:i_combo, :].tolist()
         worker_dataframe['thermor'] = therm_optic_residual[0:i_combo]
         worker_dataframe.attrs['combos_all_done'] = combos_all_done
+        worker_dataframe.attrs['big_phi_0'] = big_phi_0
         return worker_dataframe
 
     def dask_run_de_albuquerque(self, dask_client):
@@ -3864,6 +4084,7 @@ class GlassCombo(object):
             # All workers must cover all their assigned cobos for the following to be True
             all_results_df.attrs['combos_all_done'] = all(combos_all_done)
             all_results_df.attrs['weights'] = self.all_weights  # All weights, including upstream (if any)
+            # all_results_df.attrs['raw_powers'] = self.raw_powers  # Unweighted powers of all groups elements
             return all_results_df
         else:
             return None
