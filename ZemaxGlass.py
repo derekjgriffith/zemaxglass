@@ -1498,8 +1498,10 @@ class ZemaxGlassLibrary(object):
 
         Returns
         -------
-        glasses : list of strings
-            List of glass names in the format 'catalog glass'.
+        cats : list of string
+            Corresponding catalogs for the glasses provided in the following output.
+        glss : list of strings
+            List of glass names of the same length as the cats output.
         indices : ndarray of float
             Array of refractive indices. Wavelength varies across columns. Glasses vary down rows.             
         '''
